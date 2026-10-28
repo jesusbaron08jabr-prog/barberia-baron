@@ -1,0 +1,6 @@
+{
+  "name": "Barbería Barón",
+  "description": "Aplicación web móvil progresiva (PWA) de lujo para el control del alquiler diario de 4 puestos de barbería, verificación inteligente de bauches y sincronización en la nube.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

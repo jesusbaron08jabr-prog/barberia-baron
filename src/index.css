@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --gold-primary: #D4AF37;
+    --gold-light: #F5E096;
+    --gold-dark: #997A15;
+    --bg-dark: #09090B;
+    --card-dark: #18181B;
+    --card-border: #27272A;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #09090B;
+    color: #F4F4F5;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+.font-cinzel {
+  font-family: 'Cinzel', serif;
+}
+
+/* Metallic Gold Gradients */
+.gold-text-gradient {
+  background: linear-gradient(135deg, #FFF3B0 0%, #D4AF37 50%, #AA771C 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gold-badge-gradient {
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.2) 0%, rgba(170, 119, 28, 0.1) 100%);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+}
+
+.gold-button-gradient {
+  background: linear-gradient(135deg, #E5C158 0%, #D4AF37 50%, #B8860B 100%);
+  color: #09090B;
+  font-weight: 700;
+  box-shadow: 0 4px 20px -2px rgba(212, 175, 55, 0.3);
+  transition: all 0.2s ease;
+}
+
+.gold-button-gradient:hover {
+  background: linear-gradient(135deg, #F3D068 0%, #E0BC45 50%, #C49215 100%);
+  box-shadow: 0 6px 24px 0 rgba(212, 175, 55, 0.45);
+}
+
+.gold-button-gradient:active {
+  transform: scale(0.98);
+}
+
+.gold-card-glow {
+  box-shadow: 0 0 25px -5px rgba(212, 175, 55, 0.15);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #09090B;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272A;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #D4AF37;
+}

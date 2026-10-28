@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF5C0" />
+      <stop offset="35%" stop-color="#E2BF58" />
+      <stop offset="70%" stop-color="#D4AF37" />
+      <stop offset="100%" stop-color="#9E7817" />
+    </linearGradient>
+    <linearGradient id="goldLight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFF9DB" />
+      <stop offset="100%" stop-color="#D4AF37" />
+    </linearGradient>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#18181B" />
+      <stop offset="100%" stop-color="#09090B" />
+    </radialGradient>
+    <filter id="goldGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Medallion -->
+  <rect width="512" height="512" rx="100" fill="url(#bgGrad)" />
+  <circle cx="256" cy="256" r="236" fill="none" stroke="url(#goldGrad)" stroke-width="4" stroke-opacity="0.5" />
+  <circle cx="256" cy="256" r="226" fill="none" stroke="url(#goldGrad)" stroke-width="2" stroke-dasharray="6,6" stroke-opacity="0.8" />
+
+  <!-- Outer Stars & Accents -->
+  <g fill="url(#goldGrad)">
+    <polygon points="256,38 261,50 274,51 264,60 267,73 256,66 245,73 248,60 238,51 251,50" />
+    <polygon points="256,442 261,454 274,455 264,464 267,477 256,470 245,477 248,464 238,455 251,454" />
+    <circle cx="68" cy="256" r="4" />
+    <circle cx="444" cy="256" r="4" />
+  </g>
+
+  <!-- Imperial Crown (Top) -->
+  <g id="imperial-crown" fill="url(#goldGrad)" stroke="#694C05" stroke-width="1.5">
+    <!-- Crown Base Band -->
+    <path d="M180,185 L332,185 L324,202 L188,202 Z" />
+    <ellipse cx="256" cy="193" rx="72" ry="4" fill="#09090B" opacity="0.6" />
+    
+    <!-- Jewels on Band -->
+    <circle cx="210" cy="193" r="3.5" fill="#FFF" />
+    <circle cx="233" cy="193" r="3.5" fill="#FFF" />
+    <circle cx="256" cy="193" r="4.5" fill="#FFF" />
+    <circle cx="279" cy="193" r="3.5" fill="#FFF" />
+    <circle cx="302" cy="193" r="3.5" fill="#FFF" />
+
+    <!-- Crown Peaks & Arches -->
+    <path d="M182,185 Q170,140 190,135 Q205,145 215,175 Q235,120 256,110 Q277,120 297,175 Q307,145 322,135 Q342,140 330,185 Z" />
+    
+    <!-- Imperial Center Orbe & Cross -->
+    <circle cx="256" cy="104" r="8" fill="url(#goldLight)" />
+    <!-- Cross on top of Orbe -->
+    <rect x="254" y="86" width="4" height="15" fill="url(#goldLight)" />
+    <rect x="249" y="90" width="14" height="4" fill="url(#goldLight)" />
+
+    <!-- Crown Peak Spheres -->
+    <circle cx="190" cy="132" r="5" fill="url(#goldLight)" />
+    <circle cx="322" cy="132" r="5" fill="url(#goldLight)" />
+  </g>
+
+  <!-- Crossed Barber Shears (Center) -->
+  <g id="crossed-scissors" fill="url(#goldGrad)">
+    <!-- Blade 1 (Top-Left to Bottom-Right) -->
+    <path d="M140,195 C146,190 230,248 256,268 L330,342 C338,338 355,340 365,350 C378,363 378,385 365,398 C352,411 330,411 317,398 C307,388 305,371 309,363 L245,299 C225,273 140,195 140,195 Z" opacity="0.95" />
+    <!-- Hole Blade 1 Handle -->
+    <circle cx="341" cy="374" r="14" fill="#09090B" />
+
+    <!-- Blade 2 (Top-Right to Bottom-Left) -->
+    <path d="M372,195 C366,190 282,248 256,268 L182,342 C174,338 157,340 147,350 C134,363 134,385 147,398 C160,411 182,411 195,398 C205,388 207,371 203,363 L267,299 C287,273 372,195 372,195 Z" opacity="0.95" />
+    <!-- Hole Blade 2 Handle -->
+    <circle cx="171" cy="374" r="14" fill="#09090B" />
+
+    <!-- Central Pivot Screw -->
+    <circle cx="256" cy="274" r="7" fill="#FFF5C0" stroke="#7A5805" stroke-width="2" />
+  </g>
+
+  <!-- Classic Gentleman's Mustache (Underneath Crown & Center Shears) -->
+  <g id="classic-mustache" fill="url(#goldLight)" filter="url(#goldGlow)">
+    <path d="M256,314 C246,306 226,298 200,302 C168,308 140,326 122,348 C118,353 124,358 128,354 C152,332 184,320 220,324 C238,326 248,334 256,342 C264,334 274,326 292,324 C328,320 360,332 384,354 C388,358 394,353 390,348 C372,326 344,308 312,302 C286,298 266,306 256,314 Z" />
+  </g>
+
+  <!-- Ribbon / Banner Bottom -->
+  <g id="ribbon" fill="url(#goldGrad)">
+    <path d="M150,424 L362,424 L348,446 L164,446 Z" opacity="0.9" />
+    <text x="256" y="440" font-family="'Cinzel', serif" font-weight="900" font-size="15" fill="#09090B" letter-spacing="4" text-anchor="middle">BARBERÍA BARÓN</text>
+  </g>
+</svg>
