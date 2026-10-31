@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, CheckCircle2, AlertTriangle, HelpCircle, Calendar, Hash, CreditCard, Sparkles, User } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { X, CheckCircle2, AlertTriangle, HelpCircle, Calendar, Hash, CreditCard, Sparkles, User, ArrowLeft } from 'lucide-react';
 import { PaymentRecord } from '../types/barberia';
 import { formatCOP } from '../services/storage';
 
@@ -9,22 +9,44 @@ interface Props {
 }
 
 export const VoucherDetailModal: React.FC<Props> = ({ payment, onClose }) => {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   if (!payment) return null;
 
   const v = payment.geminiVerification;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 overflow-y-auto">
-      <div className="w-full max-w-lg rounded-2xl bg-[#18181B] border border-[#D4AF37]/40 shadow-2xl overflow-hidden my-4">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 overflow-y-auto cursor-pointer"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg rounded-2xl bg-[#18181B] border border-[#D4AF37]/40 shadow-2xl overflow-hidden my-4 cursor-default"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800 bg-[#09090B]">
           <div className="flex items-center gap-2.5">
+            <button
+              onClick={onClose}
+              className="p-1.5 -ml-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-[#D4AF37] transition flex items-center gap-1 text-xs font-bold"
+              title="Volver"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Volver</span>
+            </button>
             <div className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37]">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
               <h3 className="font-cinzel text-sm sm:text-base font-bold text-white">
-                Comprobante de Pago — Puesto #{payment.stationNumber}
+                Comprobante Puesto #{payment.stationNumber}
               </h3>
               <p className="text-[11px] text-zinc-400">{payment.barberName}</p>
             </div>
@@ -32,6 +54,7 @@ export const VoucherDetailModal: React.FC<Props> = ({ payment, onClose }) => {
           <button
             onClick={onClose}
             className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+            title="Cerrar modal"
           >
             <X className="w-5 h-5" />
           </button>

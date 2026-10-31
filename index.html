@@ -2,6 +2,21 @@
 <html lang="es" class="dark">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // En entorno de desarrollo AI Studio con HMR deshabilitado, ignorar errores de conexión WebSocket de Vite
+      window.addEventListener('unhandledrejection', function(event) {
+        var reason = (event && (event.reason?.message || event.reason?.stack || event.reason)) || '';
+        if (typeof reason === 'string' && reason.indexOf('WebSocket') !== -1) {
+          event.preventDefault();
+        }
+      });
+      window.addEventListener('error', function(event) {
+        var msg = (event && (event.message || event.error?.message)) || '';
+        if (typeof msg === 'string' && msg.indexOf('WebSocket') !== -1) {
+          event.preventDefault();
+        }
+      }, true);
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Barbería Barón | Control de Alquiler de Puestos</title>
     <meta name="description" content="Aplicación web móvil progresiva (PWA) de lujo para el control del alquiler diario de 4 puestos de barbería, verificación inteligente de bauches y sincronización en la nube." />

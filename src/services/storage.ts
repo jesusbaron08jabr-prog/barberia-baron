@@ -259,3 +259,31 @@ export function formatCOP(amount: number): string {
     maximumFractionDigits: 0,
   }).format(amount);
 }
+
+/**
+ * Parsea cualquier valor ingresado a entero limpio en COP.
+ * Permite números enteros directos (ej: 40000) o con puntos/comas de miles (ej: 40.000, 40,000, $40.000).
+ * Evita bugs donde el navegador interpreta el punto como decimal convirtiendo 40.000 a 39.999 o 40.
+ */
+export function parseCOPInput(val: string | number | undefined | null): number {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return Math.round(val);
+  
+  const rawStr = val.toString().trim();
+  // Elimina cualquier carácter que no sea un dígito numérico (0-9)
+  const digitsOnly = rawStr.replace(/[^0-9]/g, '');
+  if (!digitsOnly) return 0;
+  
+  return parseInt(digitsOnly, 10) || 0;
+}
+
+/**
+ * Formatea un número como texto con separador de miles con puntos (ej. 40000 -> "40.000")
+ */
+export function formatNumberWithDots(val: string | number | undefined | null): string {
+  const num = typeof val === 'number' ? val : parseCOPInput(val);
+  if (!num) return '';
+  return new Intl.NumberFormat('es-CO', {
+    maximumFractionDigits: 0,
+  }).format(num);
+}

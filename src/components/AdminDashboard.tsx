@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AppState,
   BarberStation,
@@ -6,12 +6,13 @@ import {
   DailyChargeLog,
   AdminConfig,
 } from '../types/barberia';
-import { formatCOP, pushStateToGoogleSheets, fetchStateFromGoogleSheets } from '../services/storage';
+import { formatCOP, parseCOPInput, formatNumberWithDots, pushStateToGoogleSheets, fetchStateFromGoogleSheets } from '../services/storage';
 import { Logo } from './Logo';
 import { PWAInstallButton } from './PWAInstallButton';
 import { VoucherDetailModal } from './VoucherDetailModal';
 import { GoogleAppsScriptModal } from './GoogleAppsScriptModal';
 import {
+  ArrowLeft,
   LogOut,
   Scissors,
   DollarSign,
@@ -62,6 +63,54 @@ export const AdminDashboard: React.FC<Props> = ({
   const [directPayAmount, setDirectPayAmount] = useState('');
   const [directPayMethod, setDirectPayMethod] = useState<'Efectivo' | 'Nequi' | 'Daviplata' | 'Bancolombia'>('Efectivo');
 
+  // Handle mobile / Android hardware Back button so user returns to previous screen instead of exiting app
+  useEffect(() => {
+    const handlePopState = () => {
+      // 1. Close any open modal first
+      if (selectedPayment) {
+        setSelectedPayment(null);
+        return;
+      }
+      if (showChargeConfirmModal) {
+        setShowChargeConfirmModal(false);
+        return;
+      }
+      if (adjustingStation) {
+        setAdjustingStation(null);
+        return;
+      }
+      if (payingStation) {
+        setPayingStation(null);
+        return;
+      }
+      if (showAppsScriptModal) {
+        setShowAppsScriptModal(false);
+        return;
+      }
+      // 2. If inside a sub-tab, return to the main puestos tab
+      if (activeTab !== 'puestos') {
+        setActiveTab('puestos');
+        return;
+      }
+      // 3. If on puestos tab, return to the login screen
+      onLogout();
+    };
+
+    window.history.pushState({ screen: 'admin', tab: activeTab }, '');
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [
+    activeTab,
+    selectedPayment,
+    showChargeConfirmModal,
+    adjustingStation,
+    payingStation,
+    showAppsScriptModal,
+    onLogout,
+  ]);
+
   // Filter in Bauches tab
   const [filterStation, setFilterStation] = useState<string>('all');
 
@@ -109,8 +158,8 @@ export const AdminDashboard: React.FC<Props> = ({
   // 2. Ajustar Saldo Manual
   const handleSaveManualAdjustment = () => {
     if (!adjustingStation) return;
-    const val = parseInt(adjustAmount, 10);
-    if (!val || isNaN(val) || val <= 0) return;
+    const val = parseCOPInput(adjustAmount);
+    if (!val || val <= 0) return;
 
     const updatedStations = appState.stations.map((s) => {
       if (s.id === adjustingStation.id) {
@@ -136,8 +185,8 @@ export const AdminDashboard: React.FC<Props> = ({
   // 3. Registrar Pago Directo en Efectivo o en mano
   const handleRegisterDirectPayment = () => {
     if (!payingStation) return;
-    const val = parseInt(directPayAmount, 10);
-    if (!val || isNaN(val) || val <= 0) return;
+    const val = parseCOPInput(directPayAmount);
+    if (!val || val <= 0) return;
 
     const prevBal = payingStation.currentBalance;
     const newBal = Math.max(0, prevBal - val);
@@ -285,7 +334,24 @@ export const AdminDashboard: React.FC<Props> = ({
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-[#09090B]/90 backdrop-blur-md border-b border-zinc-800/80 px-4 py-3">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            {/* Back button to return to previous tab or login */}
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab !== 'puestos') {
+                  setActiveTab('puestos');
+                } else {
+                  onLogout();
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#18181B] hover:bg-[#27272A] border border-[#D4AF37]/35 text-zinc-200 hover:text-white transition text-xs font-bold shadow-sm"
+              title={activeTab !== 'puestos' ? 'Volver a los 4 Puestos' : 'Volver a la pantalla de Login'}
+            >
+              <ArrowLeft className="w-4 h-4 text-[#D4AF37]" />
+              <span>{activeTab !== 'puestos' ? 'Puestos' : 'Volver'}</span>
+            </button>
+
             <Logo size="sm" showText={false} />
             <div>
               <div className="flex items-center gap-2">
@@ -294,7 +360,7 @@ export const AdminDashboard: React.FC<Props> = ({
                 </span>
                 <span className="text-xs text-zinc-400 font-medium hidden sm:inline">Dueño</span>
               </div>
-              <h2 className="text-sm font-bold text-white tracking-wide">
+              <h2 className="text-sm font-bold text-white tracking-wide truncate max-w-[130px] sm:max-w-none">
                 Barbería Barón
               </h2>
             </div>
@@ -537,7 +603,7 @@ export const AdminDashboard: React.FC<Props> = ({
                     <button
                       onClick={() => {
                         setPayingStation(st);
-                        setDirectPayAmount(st.currentBalance > 0 ? st.currentBalance.toString() : st.dailyRate.toString());
+                        setDirectPayAmount(st.currentBalance > 0 ? formatNumberWithDots(st.currentBalance) : formatNumberWithDots(st.dailyRate));
                       }}
                       className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-[#D4AF37] border border-[#D4AF37]/30 transition"
                       title="Registrar pago recibido en mano/efectivo"
@@ -580,6 +646,18 @@ export const AdminDashboard: React.FC<Props> = ({
         {/* ============================================================== */}
         {activeTab === 'bauches' && (
           <div className="space-y-4">
+            {/* Back button to Puestos */}
+            <div className="flex items-center">
+              <button
+                type="button"
+                onClick={() => setActiveTab('puestos')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#18181B] hover:bg-[#27272A] border border-zinc-800 text-xs font-bold text-[#D4AF37] hover:text-[#FFF3B0] transition"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>← Volver a los 4 Puestos y Saldos</span>
+              </button>
+            </div>
+
             {/* Header & Filter */}
             <div className="p-4 rounded-3xl bg-[#18181B] border border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3">
               <div>
@@ -709,6 +787,18 @@ export const AdminDashboard: React.FC<Props> = ({
         {/* ============================================================== */}
         {activeTab === 'config' && (
           <form onSubmit={handleSaveConfiguration} className="space-y-6">
+            {/* Back button to Puestos */}
+            <div className="flex items-center">
+              <button
+                type="button"
+                onClick={() => setActiveTab('puestos')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#18181B] hover:bg-[#27272A] border border-zinc-800 text-xs font-bold text-[#D4AF37] hover:text-[#FFF3B0] transition"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>← Volver a los 4 Puestos y Saldos</span>
+              </button>
+            </div>
+
             {/* Google Apps Script & Drive Integration */}
             <div className="rounded-3xl bg-[#18181B] border border-[#D4AF37]/40 p-6 shadow-xl space-y-4 gold-card-glow">
               <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
@@ -814,13 +904,22 @@ export const AdminDashboard: React.FC<Props> = ({
 
                       {/* Tarifa Diaria */}
                       <div className="space-y-1">
-                        <label className="text-zinc-400 font-medium">Tarifa Diaria (COP)</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-zinc-400 font-medium">Tarifa Diaria (COP)</label>
+                          {st.dailyRate > 0 && (
+                            <span className="text-[10px] text-[#D4AF37] font-bold">
+                              ${formatNumberWithDots(st.dailyRate)}
+                            </span>
+                          )}
+                        </div>
                         <input
-                          type="number"
-                          step="1000"
-                          value={st.dailyRate}
-                          onChange={(e) => updateStationField(idx, 'dailyRate', parseInt(e.target.value, 10) || 0)}
-                          className="w-full px-3 py-2 rounded-lg bg-[#18181B] border border-zinc-700 text-white font-bold"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9.]*"
+                          value={st.dailyRate ? formatNumberWithDots(st.dailyRate) : ''}
+                          onChange={(e) => updateStationField(idx, 'dailyRate', parseCOPInput(e.target.value))}
+                          placeholder="ej. 45.000"
+                          className="w-full px-3 py-2 rounded-lg bg-[#18181B] border border-zinc-700 text-white font-mono font-bold"
                         />
                       </div>
 
@@ -900,9 +999,18 @@ export const AdminDashboard: React.FC<Props> = ({
       {/* ============================================================== */}
       {/* MODAL: CONFIRMAR CARGA DE DÍA DE ALQUILER                      */}
       {/* ============================================================== */}
+      {/* ============================================================== */}
+      {/* MODAL: CONFIRMAR CARGA DE DÍA DE ALQUILER                      */}
+      {/* ============================================================== */}
       {showChargeConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-3xl bg-[#18181B] border border-[#D4AF37]/50 p-6 shadow-2xl relative">
+        <div
+          onClick={() => setShowChargeConfirmModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-[#18181B] border border-[#D4AF37]/50 p-6 shadow-2xl relative cursor-default"
+          >
             <div className="w-12 h-12 rounded-2xl bg-[#D4AF37]/20 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37] mx-auto mb-4">
               <CalendarCheck className="w-6 h-6" />
             </div>
@@ -933,9 +1041,10 @@ export const AdminDashboard: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => setShowChargeConfirmModal(false)}
-                className="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold transition"
+                className="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
               >
-                Cancelar
+                <ArrowLeft className="w-4 h-4" />
+                <span>Cancelar / Volver</span>
               </button>
               <button
                 type="button"
@@ -953,12 +1062,30 @@ export const AdminDashboard: React.FC<Props> = ({
       {/* MODAL: AJUSTAR SALDO MANUAL                                    */}
       {/* ============================================================== */}
       {adjustingStation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-3xl bg-[#18181B] border border-[#D4AF37]/50 p-6 shadow-2xl relative">
-            <h3 className="font-cinzel text-base font-bold text-white">
-              Ajustar Saldo Manual — Puesto #{adjustingStation.stationNumber}
-            </h3>
-            <p className="text-xs text-zinc-400 mb-4">{adjustingStation.barberName}</p>
+        <div
+          onClick={() => setAdjustingStation(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-3xl bg-[#18181B] border border-[#D4AF37]/50 p-6 shadow-2xl relative cursor-default"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-cinzel text-base font-bold text-white">
+                  Ajustar Saldo — Puesto #{adjustingStation.stationNumber}
+                </h3>
+                <p className="text-xs text-zinc-400">{adjustingStation.barberName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdjustingStation(null)}
+                className="p-1.5 rounded-xl bg-zinc-800 text-zinc-400 hover:text-white"
+                title="Volver"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            </div>
 
             <div className="space-y-4">
               <div className="p-3 rounded-xl bg-[#09090B] border border-zinc-800 flex justify-between items-center text-xs">
@@ -995,16 +1122,46 @@ export const AdminDashboard: React.FC<Props> = ({
               </div>
 
               {/* Amount */}
-              <div className="space-y-1">
-                <label className="text-xs text-zinc-300 font-semibold">Monto del Ajuste (COP)</label>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-zinc-300 font-semibold">Monto del Ajuste (COP)</label>
+                  {adjustAmount && parseCOPInput(adjustAmount) > 0 && (
+                    <span className="text-[11px] font-bold text-[#D4AF37]">
+                      {formatCOP(parseCOPInput(adjustAmount))}
+                    </span>
+                  )}
+                </div>
                 <input
-                  type="number"
-                  step="1000"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9.]*"
                   value={adjustAmount}
-                  onChange={(e) => setAdjustAmount(e.target.value)}
-                  placeholder="ej. 20000"
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#09090B] border border-zinc-700 text-white font-bold"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (!raw.trim()) {
+                      setAdjustAmount('');
+                      return;
+                    }
+                    const num = parseCOPInput(raw);
+                    setAdjustAmount(num > 0 ? formatNumberWithDots(num) : '');
+                  }}
+                  placeholder="ej. 40.000"
+                  className="w-full px-3 py-2.5 rounded-xl bg-[#09090B] border border-zinc-700 text-white font-mono font-bold text-base focus:outline-none focus:border-[#D4AF37]"
                 />
+
+                {/* Botones de Montos Rápidos */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {[10000, 20000, 40000, 45000, 50000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setAdjustAmount(formatNumberWithDots(amt))}
+                      className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[11px] font-bold text-zinc-200 border border-zinc-700 transition"
+                    >
+                      ${formatNumberWithDots(amt)}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Reason */}
@@ -1023,9 +1180,10 @@ export const AdminDashboard: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => setAdjustingStation(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-white text-xs font-bold"
+                  className="flex-1 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
                 >
-                  Cancelar
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Volver</span>
                 </button>
                 <button
                   type="button"
@@ -1044,12 +1202,30 @@ export const AdminDashboard: React.FC<Props> = ({
       {/* MODAL: REGISTRAR PAGO DIRECTO EN CAJA                          */}
       {/* ============================================================== */}
       {payingStation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-3xl bg-[#18181B] border border-[#D4AF37]/50 p-6 shadow-2xl relative">
-            <h3 className="font-cinzel text-base font-bold text-white">
-              Registrar Pago Directo — Puesto #{payingStation.stationNumber}
-            </h3>
-            <p className="text-xs text-zinc-400 mb-4">{payingStation.barberName}</p>
+        <div
+          onClick={() => setPayingStation(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-3xl bg-[#18181B] border border-[#D4AF37]/50 p-6 shadow-2xl relative cursor-default"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-cinzel text-base font-bold text-white">
+                  Registrar Pago — Puesto #{payingStation.stationNumber}
+                </h3>
+                <p className="text-xs text-zinc-400">{payingStation.barberName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPayingStation(null)}
+                className="p-1.5 rounded-xl bg-zinc-800 text-zinc-400 hover:text-white"
+                title="Volver"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            </div>
 
             <div className="space-y-4 text-xs">
               <div className="p-3 rounded-xl bg-[#09090B] border border-zinc-800 flex justify-between items-center">
@@ -1059,15 +1235,55 @@ export const AdminDashboard: React.FC<Props> = ({
                 </strong>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-zinc-300 font-semibold">Valor Recibido (COP)</label>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-zinc-300 font-semibold">Valor Recibido (COP)</label>
+                  {directPayAmount && parseCOPInput(directPayAmount) > 0 && (
+                    <span className="text-[11px] font-bold text-[#D4AF37]">
+                      {formatCOP(parseCOPInput(directPayAmount))}
+                    </span>
+                  )}
+                </div>
                 <input
-                  type="number"
-                  step="1000"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9.]*"
                   value={directPayAmount}
-                  onChange={(e) => setDirectPayAmount(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#09090B] border border-zinc-700 text-white font-bold text-sm"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (!raw.trim()) {
+                      setDirectPayAmount('');
+                      return;
+                    }
+                    const num = parseCOPInput(raw);
+                    setDirectPayAmount(num > 0 ? formatNumberWithDots(num) : '');
+                  }}
+                  placeholder="ej. 40.000"
+                  className="w-full px-3 py-2.5 rounded-xl bg-[#09090B] border border-zinc-700 text-white font-mono font-bold text-base focus:outline-none focus:border-[#D4AF37]"
                 />
+
+                {/* Botones Rápidos */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {payingStation.currentBalance > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setDirectPayAmount(formatNumberWithDots(payingStation.currentBalance))}
+                      className="px-2.5 py-1 rounded-lg gold-badge-gradient text-[11px] font-bold text-[#D4AF37] border border-[#D4AF37]/40 transition"
+                    >
+                      Total (${formatNumberWithDots(payingStation.currentBalance)})
+                    </button>
+                  )}
+                  {[10000, 20000, 40000, 45000, 50000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setDirectPayAmount(formatNumberWithDots(amt))}
+                      className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[11px] font-bold text-zinc-200 border border-zinc-700 transition"
+                    >
+                      ${formatNumberWithDots(amt)}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -1094,9 +1310,10 @@ export const AdminDashboard: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => setPayingStation(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-white font-bold"
+                  className="flex-1 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold transition flex items-center justify-center gap-1.5"
                 >
-                  Cancelar
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Volver</span>
                 </button>
                 <button
                   type="button"

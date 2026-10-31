@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Copy, Check, FileSpreadsheet, HardDrive, ExternalLink } from 'lucide-react';
+import { X, Copy, Check, FileSpreadsheet, HardDrive, ExternalLink, ArrowLeft } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
@@ -198,8 +198,14 @@ export const GoogleAppsScriptModal: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto">
-      <div className="w-full max-w-2xl rounded-2xl bg-[#18181B] border border-[#D4AF37]/40 shadow-2xl overflow-hidden my-6">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto cursor-pointer"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-2xl rounded-2xl bg-[#18181B] border border-[#D4AF37]/40 shadow-2xl overflow-hidden my-6 cursor-default"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-[#09090B]">
           <div className="flex items-center gap-3">
@@ -298,9 +304,10 @@ export const GoogleAppsScriptModal: React.FC<Props> = ({ isOpen, onClose }) => {
         <div className="flex items-center justify-end px-6 py-3.5 border-t border-zinc-800 bg-[#09090B] gap-2">
           <button
             onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-[#27272A] hover:bg-[#323238] text-white text-xs font-semibold tracking-wide transition"
+            className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-[#27272A] hover:bg-[#323238] text-white text-xs font-semibold tracking-wide transition"
           >
-            Cerrar Guía
+            <ArrowLeft className="w-4 h-4" />
+            <span>Volver a la App</span>
           </button>
         </div>
       </div>

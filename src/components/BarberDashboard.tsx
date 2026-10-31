@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { AppState, BarberStation, PaymentRecord, PaymentMethod, GeminiVerificationResult } from '../types/barberia';
-import { formatCOP } from '../services/storage';
+import { formatCOP, parseCOPInput, formatNumberWithDots } from '../services/storage';
 import { Logo } from './Logo';
 import { PWAInstallButton } from './PWAInstallButton';
 import { VoucherDetailModal } from './VoucherDetailModal';
 import {
+  ArrowLeft,
   LogOut,
   Camera,
   Upload,
@@ -35,7 +36,9 @@ export const BarberDashboard: React.FC<Props> = ({
 }) => {
   // Form State
   const [paymentType, setPaymentType] = useState<'total' | 'abono'>('total');
-  const [amountInput, setAmountInput] = useState<string>(station.currentBalance.toString());
+  const [amountInput, setAmountInput] = useState<string>(
+    station.currentBalance > 0 ? formatNumberWithDots(station.currentBalance) : ''
+  );
   const [method, setMethod] = useState<PaymentMethod>('Nequi');
   const [notes, setNotes] = useState('');
   
@@ -56,11 +59,28 @@ export const BarberDashboard: React.FC<Props> = ({
   // Filter only this barber's personal history
   const personalPayments = appState.payments.filter((p) => p.stationId === station.id);
 
+  // Handle mobile / Android hardware Back button so user returns to previous screen instead of exiting app
+  useEffect(() => {
+    const handlePopState = () => {
+      if (selectedPayment) {
+        setSelectedPayment(null);
+      } else {
+        onLogout();
+      }
+    };
+
+    window.history.pushState({ screen: 'barber', stationId: station.id }, '');
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [selectedPayment, onLogout, station.id]);
+
   // Handle payment type change
   const handleTypeChange = (type: 'total' | 'abono') => {
     setPaymentType(type);
     if (type === 'total') {
-      setAmountInput(station.currentBalance.toString());
+      setAmountInput(station.currentBalance > 0 ? formatNumberWithDots(station.currentBalance) : '');
     } else {
       setAmountInput('');
     }
@@ -114,7 +134,7 @@ export const BarberDashboard: React.FC<Props> = ({
 
       // Trigger server-side Gemini AI verification
       setIsAnalyzingAI(true);
-      const reportedVal = parseInt(amountInput, 10) || (paymentType === 'total' ? station.currentBalance : 0);
+      const reportedVal = parseCOPInput(amountInput) || (paymentType === 'total' ? station.currentBalance : 0);
 
       const res = await fetch('/api/gemini/verify-voucher', {
         method: 'POST',
@@ -132,7 +152,7 @@ export const BarberDashboard: React.FC<Props> = ({
           setAiResult(data.verification);
           // If Gemini clearly extracted an amount and user chose 'abono', suggest updating amount
           if (paymentType === 'abono' && data.verification.extractedAmount && (!amountInput || amountInput === '0')) {
-            setAmountInput(data.verification.extractedAmount.toString());
+            setAmountInput(formatNumberWithDots(data.verification.extractedAmount));
           }
         }
       }
@@ -148,8 +168,8 @@ export const BarberDashboard: React.FC<Props> = ({
     setFormError('');
     setSuccessMessage('');
 
-    const parsedAmount = parseInt(amountInput, 10);
-    if (!parsedAmount || isNaN(parsedAmount) || parsedAmount <= 0) {
+    const parsedAmount = parseCOPInput(amountInput);
+    if (!parsedAmount || parsedAmount <= 0) {
       setFormError('Por favor ingresa un monto válido en pesos colombianos (COP).');
       return;
     }
@@ -230,7 +250,7 @@ export const BarberDashboard: React.FC<Props> = ({
       setAiResult(null);
       setNotes('');
       if (paymentType === 'total') {
-        setAmountInput(newBal.toString());
+        setAmountInput(newBal > 0 ? formatNumberWithDots(newBal) : '');
       } else {
         setAmountInput('');
       }
@@ -243,10 +263,21 @@ export const BarberDashboard: React.FC<Props> = ({
 
   return (
     <div className="min-h-screen bg-[#09090B] text-zinc-100 flex flex-col pb-16">
-      {/* Top Header */}
+      {/* Top Header with Prominent Back Button */}
       <header className="sticky top-0 z-30 bg-[#09090B]/90 backdrop-blur-md border-b border-zinc-800/80 px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {/* Back button to return to login / switch screen */}
+            <button
+              type="button"
+              onClick={onLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#18181B] hover:bg-[#27272A] border border-[#D4AF37]/35 text-zinc-200 hover:text-white transition text-xs font-bold shadow-sm"
+              title="Volver a la pantalla de Login"
+            >
+              <ArrowLeft className="w-4 h-4 text-[#D4AF37]" />
+              <span>Volver</span>
+            </button>
+
             <Logo size="sm" showText={false} />
             <div>
               <div className="flex items-center gap-2">
@@ -255,7 +286,7 @@ export const BarberDashboard: React.FC<Props> = ({
                 </span>
                 <span className="text-xs text-zinc-400 font-medium">Barbería Barón</span>
               </div>
-              <h2 className="text-sm font-bold text-white tracking-wide truncate max-w-[180px] sm:max-w-none">
+              <h2 className="text-sm font-bold text-white tracking-wide truncate max-w-[150px] sm:max-w-none">
                 {station.barberName}
               </h2>
             </div>
@@ -362,26 +393,73 @@ export const BarberDashboard: React.FC<Props> = ({
             </div>
 
             {/* Monto en COP */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
-                Valor del Pago (COP)
-              </label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                  Valor del Pago (COP)
+                </label>
+                {amountInput && parseCOPInput(amountInput) > 0 && (
+                  <span className="text-[11px] font-bold text-[#D4AF37]">
+                    {formatCOP(parseCOPInput(amountInput))}
+                  </span>
+                )}
+              </div>
+
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500 font-bold">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400 font-bold text-sm">
                   $
                 </div>
                 <input
-                  type="number"
-                  min="1"
-                  step="1000"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9.]*"
                   value={amountInput}
-                  onChange={(e) => setAmountInput(e.target.value)}
-                  placeholder="ej. 45000"
-                  className="w-full pl-8 pr-16 py-3 rounded-xl bg-[#09090B] border border-zinc-700 text-white font-mono text-base font-bold focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (!raw.trim()) {
+                      setAmountInput('');
+                      return;
+                    }
+                    const num = parseCOPInput(raw);
+                    setAmountInput(num > 0 ? formatNumberWithDots(num) : '');
+                  }}
+                  placeholder="ej. 40.000"
+                  className="w-full pl-8 pr-16 py-3 rounded-xl bg-[#09090B] border border-zinc-700 text-white font-mono text-lg font-bold focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition"
                 />
                 <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs font-bold text-zinc-400 pointer-events-none">
                   COP
                 </span>
+              </div>
+
+              {/* Botones de Montos Rápidos / Enteros */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[11px] text-zinc-500 mr-0.5">Rápidos:</span>
+                {[10000, 20000, 40000, 45000, 50000].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => {
+                      setPaymentType('abono');
+                      setAmountInput(formatNumberWithDots(amt));
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-[#27272A] hover:bg-[#323238] border border-zinc-700 text-[11px] font-bold text-zinc-200 transition"
+                  >
+                    ${formatNumberWithDots(amt)}
+                  </button>
+                ))}
+                {station.currentBalance > 0 && (
+                  <button
+                    key="total"
+                    type="button"
+                    onClick={() => {
+                      setPaymentType('total');
+                      setAmountInput(formatNumberWithDots(station.currentBalance));
+                    }}
+                    className="px-2.5 py-1 rounded-lg gold-badge-gradient text-[11px] font-bold text-[#D4AF37] border border-[#D4AF37]/40 transition"
+                  >
+                    Total (${formatNumberWithDots(station.currentBalance)})
+                  </button>
+                )}
               </div>
             </div>
 

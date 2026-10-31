@@ -1,3 +1,4 @@
+import http from 'http';
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
@@ -120,20 +121,26 @@ app.get('/api/health', (_req, res) => {
 
 // Vite middleware in dev or static files in production
 async function startServer() {
-  if (process.env.NODE_ENV === 'production') {
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (isProd) {
     app.use(express.static('dist'));
     app.get('*', (_req, res) => {
       res.sendFile(path.resolve('dist', 'index.html'));
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  app.listen(port, '0.0.0.0', () => {
+  const server = http.createServer(app);
+  server.listen(port, '0.0.0.0', () => {
     console.log(`[Barbería Barón] Servidor activo en http://localhost:${port}`);
   });
 }
