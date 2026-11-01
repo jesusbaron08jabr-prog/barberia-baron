@@ -3,19 +3,81 @@
   <head>
     <meta charset="UTF-8" />
     <script>
-      // En entorno de desarrollo AI Studio con HMR deshabilitado, ignorar errores de conexión WebSocket de Vite
-      window.addEventListener('unhandledrejection', function(event) {
-        var reason = (event && (event.reason?.message || event.reason?.stack || event.reason)) || '';
-        if (typeof reason === 'string' && reason.indexOf('WebSocket') !== -1) {
-          event.preventDefault();
+      (function() {
+        // En entorno AI Studio con HMR deshabilitado, interceptar el WebSocket de Vite para evitar 'WebSocket closed without opened'
+        if (typeof window !== 'undefined') {
+          var RealWebSocket = window.WebSocket;
+          if (RealWebSocket) {
+            window.WebSocket = function(url, protocols) {
+              var urlStr = String(url || '');
+              if (urlStr.indexOf('vite') !== -1 || urlStr.indexOf('token=') !== -1 || urlStr.indexOf('ws://') === 0 || urlStr.indexOf('wss://') === 0) {
+                var listeners = {};
+                var mockWs = {
+                  url: urlStr,
+                  readyState: 1, // OPEN
+                  CONNECTING: 0,
+                  OPEN: 1,
+                  CLOSING: 2,
+                  CLOSED: 3,
+                  binaryType: 'blob',
+                  bufferedAmount: 0,
+                  extensions: '',
+                  protocol: '',
+                  onopen: null,
+                  onclose: null,
+                  onerror: null,
+                  onmessage: null,
+                  send: function() {},
+                  close: function() {},
+                  addEventListener: function(type, listener) {
+                    if (!listeners[type]) listeners[type] = [];
+                    listeners[type].push(listener);
+                    if (type === 'open') {
+                      setTimeout(function() {
+                        try {
+                          if (typeof listener === 'function') listener({ type: 'open' });
+                          if (typeof mockWs.onopen === 'function') mockWs.onopen({ type: 'open' });
+                        } catch (e) {}
+                      }, 0);
+                    }
+                  },
+                  removeEventListener: function(type, listener) {
+                    if (listeners[type]) {
+                      listeners[type] = listeners[type].filter(function(l) { return l !== listener; });
+                    }
+                  },
+                  dispatchEvent: function() { return true; }
+                };
+                return mockWs;
+              }
+              return new RealWebSocket(url, protocols);
+            };
+            window.WebSocket.CONNECTING = 0;
+            window.WebSocket.OPEN = 1;
+            window.WebSocket.CLOSING = 2;
+            window.WebSocket.CLOSED = 3;
+            window.WebSocket.prototype = RealWebSocket.prototype;
+          }
         }
-      });
-      window.addEventListener('error', function(event) {
-        var msg = (event && (event.message || event.error?.message)) || '';
-        if (typeof msg === 'string' && msg.indexOf('WebSocket') !== -1) {
-          event.preventDefault();
-        }
-      }, true);
+
+        // Interceptar y silenciar errores y promesas no manejadas relacionadas con WebSocket de Vite
+        window.addEventListener('unhandledrejection', function(event) {
+          var reason = (event && (event.reason?.message || event.reason?.stack || event.reason)) || '';
+          if (typeof reason === 'string' && (reason.indexOf('WebSocket') !== -1 || reason.indexOf('@vite/client') !== -1)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+
+        window.addEventListener('error', function(event) {
+          var msg = (event && (event.message || event.error?.message || event.error?.stack)) || '';
+          var filename = (event && event.filename) || '';
+          if ((typeof msg === 'string' && msg.indexOf('WebSocket') !== -1) || (typeof filename === 'string' && filename.indexOf('@vite/client') !== -1)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+      })();
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Barbería Barón | Control de Alquiler de Puestos</title>

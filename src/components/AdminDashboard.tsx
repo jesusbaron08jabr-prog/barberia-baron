@@ -65,6 +65,8 @@ export const AdminDashboard: React.FC<Props> = ({
   const [showChargeConfirmModal, setShowChargeConfirmModal] = useState(false);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
   const [resetTotalCollected, setResetTotalCollected] = useState(true);
+  const [resetPendingBalances, setResetPendingBalances] = useState(true);
+  const [showResetBalancesModal, setShowResetBalancesModal] = useState(false);
   const [adjustingStation, setAdjustingStation] = useState<BarberStation | null>(null);
   const [adjustAmount, setAdjustAmount] = useState('');
   const [adjustType, setAdjustType] = useState<'add' | 'subtract'>('add');
@@ -81,6 +83,10 @@ export const AdminDashboard: React.FC<Props> = ({
       // 1. Close any open modal first
       if (selectedPayment) {
         setSelectedPayment(null);
+        return;
+      }
+      if (showResetBalancesModal) {
+        setShowResetBalancesModal(false);
         return;
       }
       if (showResetConfirmModal) {
@@ -120,6 +126,7 @@ export const AdminDashboard: React.FC<Props> = ({
   }, [
     activeTab,
     selectedPayment,
+    showResetBalancesModal,
     showResetConfirmModal,
     showChargeConfirmModal,
     adjustingStation,
@@ -428,17 +435,39 @@ export const AdminDashboard: React.FC<Props> = ({
 
   // 9. Resetear Registros de Pagos
   const handleResetPaymentRecords = () => {
+    const updatedStations = resetPendingBalances
+      ? appState.stations.map((s) => ({ ...s, currentBalance: 0 }))
+      : appState.stations;
+
     const newState: AppState = {
       ...appState,
       payments: [],
+      stations: updatedStations,
       totalCollected: resetTotalCollected ? 0 : appState.totalCollected,
     };
 
     onUpdateState(newState, {
-      notes: 'Historial de pagos reseteado por el Administrador',
+      notes: resetPendingBalances
+        ? 'Historial de pagos, total recaudado y saldos pendientes reseteados a $0 por el Administrador'
+        : 'Historial de pagos reseteado por el Administrador',
     });
 
     setShowResetConfirmModal(false);
+  };
+
+  // 10. Reiniciar Únicamente el Contador de Saldos Pendientes a $0
+  const handleResetBalancesOnly = () => {
+    const updatedStations = appState.stations.map((s) => ({ ...s, currentBalance: 0 }));
+    const newState: AppState = {
+      ...appState,
+      stations: updatedStations,
+    };
+
+    onUpdateState(newState, {
+      notes: 'Contador de saldos pendientes reiniciado a $0 COP para los 4 barberos por el Administrador',
+    });
+
+    setShowResetBalancesModal(false);
   };
 
   // Filtrado avanzado de pagos por Barbero, Fecha, Periodo, Estado y Búsqueda
@@ -652,8 +681,19 @@ export const AdminDashboard: React.FC<Props> = ({
               <div className="p-5 rounded-3xl bg-[#18181B] border border-[#D4AF37]/30 shadow-xl relative overflow-hidden gold-card-glow">
                 <div className="flex items-center justify-between text-zinc-400 text-xs font-semibold uppercase tracking-wider mb-1">
                   <span>Saldos Pendientes</span>
-                  <div className="w-7 h-7 rounded-lg bg-[#D4AF37]/15 text-[#D4AF37] flex items-center justify-center">
-                    <DollarSign className="w-4 h-4" />
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowResetBalancesModal(true)}
+                      title="Reiniciar todos los saldos pendientes a $0 COP"
+                      className="px-2 py-0.5 rounded-lg bg-zinc-900 border border-zinc-700/80 hover:border-amber-500/60 text-[10px] text-zinc-400 hover:text-[#D4AF37] font-semibold flex items-center gap-1 transition shadow-sm"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      <span>Reset $0</span>
+                    </button>
+                    <div className="w-7 h-7 rounded-lg bg-[#D4AF37]/15 text-[#D4AF37] flex items-center justify-center">
+                      <DollarSign className="w-4 h-4" />
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-baseline gap-1.5 mt-2">
@@ -697,7 +737,7 @@ export const AdminDashboard: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Global Action Banner: Cargar Día de Alquiler */}
+            {/* Global Action Banner: Cargar Día de Alquiler y Reiniciar Saldos */}
             <div className="rounded-3xl bg-gradient-to-r from-[#2A2311] via-[#1E1B13] to-[#18181B] border border-[#D4AF37]/50 p-5 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3.5 text-center sm:text-left">
                 <div className="w-12 h-12 rounded-2xl bg-[#D4AF37]/20 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37] flex-shrink-0">
@@ -705,21 +745,33 @@ export const AdminDashboard: React.FC<Props> = ({
                 </div>
                 <div>
                   <h3 className="font-cinzel text-base font-bold text-white">
-                    Cargar Día de Alquiler a los 4 Barberos
+                    Control de Alquiler de los 4 Barberos
                   </h3>
                   <p className="text-xs text-zinc-300">
-                    Suma la tarifa diaria configurada al saldo pendiente de cada uno de los 4 puestos simultáneamente.
+                    Carga el alquiler diario o reinicia el contador de saldos pendientes a $0 COP cuando inicien ciclo.
                   </p>
                 </div>
               </div>
 
-              <button
-                onClick={() => setShowChargeConfirmModal(true)}
-                className="w-full sm:w-auto px-5 py-3 rounded-2xl gold-button-gradient text-xs sm:text-sm font-black uppercase tracking-wider transition whitespace-nowrap shadow-lg flex items-center justify-center gap-2 flex-shrink-0"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>Cargar Día a los 4</span>
-              </button>
+              <div className="flex flex-wrap sm:flex-nowrap gap-2.5 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowResetBalancesModal(true)}
+                  className="flex-1 sm:flex-initial px-4 py-3 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 border border-amber-600/40 text-amber-300 hover:text-white text-xs sm:text-sm font-bold transition flex items-center justify-center gap-1.5 shadow-md whitespace-nowrap"
+                  title="Reiniciar a $0 el contador de saldos pendientes de los 4 barberos"
+                >
+                  <RotateCcw className="w-4 h-4 text-[#D4AF37]" />
+                  <span>Reiniciar Saldos ($0)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowChargeConfirmModal(true)}
+                  className="flex-1 sm:flex-initial px-5 py-3 rounded-2xl gold-button-gradient text-xs sm:text-sm font-black uppercase tracking-wider transition whitespace-nowrap shadow-lg flex items-center justify-center gap-2 flex-shrink-0"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Cargar Día a los 4</span>
+                </button>
+              </div>
             </div>
 
             {/* 4 Barber Stations Grid */}
@@ -1731,7 +1783,7 @@ export const AdminDashboard: React.FC<Props> = ({
             </div>
 
             <p className="text-xs text-zinc-300 leading-relaxed bg-[#09090B] p-3.5 rounded-2xl border border-zinc-800">
-              Se vaciará el listado de comprobantes registrados en la aplicación. Los saldos pendientes de los puestos se mantendrán intactos para no afectar las deudas vigentes de los barberos.
+              Se vaciará el listado de comprobantes registrados en la aplicación para iniciar un nuevo ciclo contable.
             </p>
 
             {/* Checkbox para reiniciar Total Recaudado */}
@@ -1744,6 +1796,19 @@ export const AdminDashboard: React.FC<Props> = ({
               />
               <span className="text-xs font-semibold text-zinc-200">
                 Reiniciar también el contador de "Total Recaudado" a $0 COP
+              </span>
+            </label>
+
+            {/* Checkbox para reiniciar Saldos Pendientes */}
+            <label className="flex items-center gap-2.5 p-3 rounded-xl bg-[#09090B] border border-zinc-800 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={resetPendingBalances}
+                onChange={(e) => setResetPendingBalances(e.target.checked)}
+                className="w-4 h-4 rounded text-[#D4AF37] focus:ring-[#D4AF37] bg-zinc-900 border-zinc-700"
+              />
+              <span className="text-xs font-semibold text-zinc-200">
+                Reiniciar también el contador de "Saldos Pendientes" a $0 COP (deuda de los 4 barberos)
               </span>
             </label>
 
@@ -1763,6 +1828,64 @@ export const AdminDashboard: React.FC<Props> = ({
               >
                 <Trash2 className="w-4 h-4" />
                 <span>Vaciar Historial</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Reiniciar Exclusivamente Saldos Pendientes */}
+      {showResetBalancesModal && (
+        <div
+          onClick={() => setShowResetBalancesModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-[#18181B] border border-[#D4AF37]/50 p-6 shadow-2xl space-y-4 cursor-default"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-950/60 border border-[#D4AF37]/50 flex items-center justify-center text-[#D4AF37] flex-shrink-0">
+                <RotateCcw className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-cinzel text-lg font-bold text-white">
+                  ¿Reiniciar Saldos Pendientes?
+                </h3>
+                <p className="text-xs text-zinc-400">Pondrá en $0 COP la deuda de los 4 puestos de barbería.</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#09090B] border border-zinc-800 space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-zinc-400">Total saldos pendientes actual:</span>
+                <span className="font-bold text-[#D4AF37]">{formatCOP(totalPendingBalances)} COP</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-zinc-400">Nuevo saldo para cada barbero:</span>
+                <span className="font-bold text-emerald-400">$0 COP</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 pt-1 border-t border-zinc-800">
+                El historial de bauches y pagos se mantendrá intacto. Solo se limpiarán las deudas acumuladas de los 4 puestos para iniciar un nuevo ciclo limpio.
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowResetBalancesModal(false)}
+                className="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Cancelar</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleResetBalancesOnly}
+                className="flex-1 py-3 rounded-xl gold-button-gradient text-xs font-black uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Reiniciar a $0</span>
               </button>
             </div>
           </div>

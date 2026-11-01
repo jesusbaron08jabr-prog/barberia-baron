@@ -1,6 +1,7 @@
 import { AppState, BarberStation, PaymentRecord } from '../types/barberia';
 
-const STORAGE_KEY = 'barberia_baron_state_v1';
+const STORAGE_KEY = 'barberia_baron_state_v2';
+const PREV_STORAGE_KEY = 'barberia_baron_state_v1';
 
 export const INITIAL_STATIONS: BarberStation[] = [
   {
@@ -10,7 +11,7 @@ export const INITIAL_STATIONS: BarberStation[] = [
     whatsapp: '573124567890',
     username: 'barbero1',
     password: '123',
-    currentBalance: 45000,
+    currentBalance: 0,
     dailyRate: 45000,
     active: true,
   },
@@ -32,7 +33,7 @@ export const INITIAL_STATIONS: BarberStation[] = [
     whatsapp: '573202345678',
     username: 'barbero3',
     password: '123',
-    currentBalance: 90000,
+    currentBalance: 0,
     dailyRate: 45000,
     active: true,
   },
@@ -43,7 +44,7 @@ export const INITIAL_STATIONS: BarberStation[] = [
     whatsapp: '573017654321',
     username: 'barbero4',
     password: '123',
-    currentBalance: 45000,
+    currentBalance: 0,
     dailyRate: 45000,
     active: true,
   },
@@ -51,68 +52,8 @@ export const INITIAL_STATIONS: BarberStation[] = [
 
 export const INITIAL_STATE: AppState = {
   stations: INITIAL_STATIONS,
-  payments: [
-    {
-      id: 'pay-sample-1',
-      stationId: 'barbero2',
-      stationNumber: 2,
-      barberName: 'Andrés Silva',
-      type: 'total',
-      amount: 45000,
-      previousBalance: 45000,
-      remainingBalance: 0,
-      method: 'Nequi',
-      voucherBase64: '',
-      timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-      formattedDate: 'Hoy, 09:30 AM',
-      geminiVerification: {
-        extractedAmount: 45000,
-        extractedDate: 'Hoy, 09:29 AM',
-        referenceNumber: 'M829104',
-        paymentPlatform: 'Nequi',
-        matchStatus: 'verified',
-        confidence: 'high',
-        analysisNotes: 'Comprobante digital verificado por IA. Coincide exactamente con el valor de alquiler.',
-      },
-      status: 'aprobado',
-      notes: 'Pago de alquiler puntual',
-    },
-    {
-      id: 'pay-sample-2',
-      stationId: 'barbero3',
-      stationNumber: 3,
-      barberName: 'Mateo Gómez',
-      type: 'abono',
-      amount: 25000,
-      previousBalance: 115000,
-      remainingBalance: 90000,
-      method: 'Daviplata',
-      voucherBase64: '',
-      timestamp: new Date(Date.now() - 86400000).toISOString(),
-      formattedDate: 'Ayer, 05:45 PM',
-      geminiVerification: {
-        extractedAmount: 25000,
-        extractedDate: 'Ayer, 05:44 PM',
-        referenceNumber: 'D938102',
-        paymentPlatform: 'Daviplata',
-        matchStatus: 'verified',
-        confidence: 'high',
-        analysisNotes: 'Abono parcial verificado en Daviplata. Queda saldo pendiente restante.',
-      },
-      status: 'aprobado',
-      notes: 'Abono a cuenta',
-    },
-  ],
-  chargeLogs: [
-    {
-      id: 'charge-sample-1',
-      timestamp: new Date(Date.now() - 86400000).toISOString(),
-      amountPerStation: 45000,
-      totalCharged: 180000,
-      stationsAffected: [1, 2, 3, 4],
-      note: 'Carga diaria general de alquiler a los 4 puestos',
-    },
-  ],
+  payments: [],
+  chargeLogs: [],
   config: {
     adminUsername: 'admin',
     adminPassword: 'baron2026',
@@ -121,7 +62,7 @@ export const INITIAL_STATE: AppState = {
     lastSyncedAt: null,
     autoSync: true,
   },
-  totalCollected: 70000,
+  totalCollected: 0,
 };
 
 const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxGFjtNNYgWf91FZOhZHZjMfx5zXpnPVd1nNtCyJ-gwYMc5DPecLvj06W_RCJKZB-wM/exec';
@@ -129,7 +70,42 @@ const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxGFjtNNYgWf
 export function loadLocalState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return INITIAL_STATE;
+    if (!raw) {
+      // Si existe estado anterior v1, migrar configuraciones pero reiniciar saldos pendientes y total a $0
+      const prevRaw = localStorage.getItem(PREV_STORAGE_KEY);
+      if (prevRaw) {
+        try {
+          const prevParsed = JSON.parse(prevRaw);
+          const existingUrl = prevParsed.config?.scriptUrl;
+          const resolvedUrl = !existingUrl || existingUrl.trim() === '' || existingUrl.includes('PEGA_AQUI')
+            ? DEFAULT_SCRIPT_URL
+            : existingUrl;
+
+          const migratedStations = (prevParsed.stations || INITIAL_STATIONS).map((st: BarberStation) => ({
+            ...st,
+            currentBalance: 0, // Reiniciar contador de saldos pendientes a 0 COP
+          }));
+
+          const migratedState: AppState = {
+            ...INITIAL_STATE,
+            stations: migratedStations,
+            payments: [],
+            chargeLogs: [],
+            totalCollected: 0,
+            config: {
+              ...INITIAL_STATE.config,
+              ...(prevParsed.config || {}),
+              scriptUrl: resolvedUrl,
+            },
+          };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(migratedState));
+          return migratedState;
+        } catch (e) {
+          console.warn('Error al migrar estado v1:', e);
+        }
+      }
+      return INITIAL_STATE;
+    }
     const parsed = JSON.parse(raw);
     const existingUrl = parsed.config?.scriptUrl;
     const resolvedUrl = !existingUrl || existingUrl.trim() === '' || existingUrl.includes('PEGA_AQUI')
