@@ -68,7 +68,25 @@ export default function App() {
 
     // Push to Google Sheets & Drive in background if scriptUrl is configured
     if (newState.config.scriptUrl) {
-      pushStateToGoogleSheets(newState.config.scriptUrl, newState, latestVoucher).catch((err) => {
+      pushStateToGoogleSheets(newState.config.scriptUrl, newState, latestVoucher).then((res) => {
+        if (res.success && res.driveUrl) {
+          setAppState((current) => {
+            const updatedPayments = current.payments.map((p) => {
+              if (
+                latestVoucher &&
+                (p.timestamp === latestVoucher.timestamp ||
+                  (latestVoucher.amount === p.amount && latestVoucher.barberName === p.barberName && !p.driveFileUrl))
+              ) {
+                return { ...p, driveFileUrl: res.driveUrl };
+              }
+              return p;
+            });
+            const updated = { ...current, payments: updatedPayments };
+            saveLocalState(updated);
+            return updated;
+          });
+        }
+      }).catch((err) => {
         console.warn('Fallo al sincronizar en segundo plano con Google Sheets:', err);
       });
     }

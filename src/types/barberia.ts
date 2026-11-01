@@ -24,8 +24,12 @@ export interface PaymentRecord {
   timestamp: string;
   formattedDate: string;
   geminiVerification?: GeminiVerificationResult | null;
-  status: 'aprobado' | 'pendiente_revision' | 'rechazado';
+  status: 'aprobado' | 'pendiente' | 'pendiente_revision' | 'rechazado';
   notes?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  rejectionReason?: string;
+  driveFileUrl?: string;
 }
 
 export interface BarberStation {

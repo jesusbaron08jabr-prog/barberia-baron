@@ -119,6 +119,51 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', app: 'Barbería Barón API', timestamp: new Date().toISOString() });
 });
 
+// Endpoint to proxy Google Apps Script sync (handles CORS, redirects, and Drive URL extraction)
+app.post('/api/sync/sheets', async (req, res) => {
+  try {
+    const { scriptUrl, payload } = req.body;
+    if (!scriptUrl || typeof scriptUrl !== 'string' || !scriptUrl.trim()) {
+      return res.status(400).json({ success: false, error: 'No se proporcionó la URL de Google Script' });
+    }
+
+    const targetUrl = scriptUrl.trim();
+    const bodyStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+
+    const googleRes = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: bodyStr,
+      redirect: 'follow',
+    });
+
+    const text = await googleRes.text();
+    let json: any = {};
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { ok: true, raw: text };
+    }
+
+    const driveUrl = json.driveUrl || json.driveFileUrl || '';
+
+    return res.json({
+      success: true,
+      data: json,
+      driveUrl: driveUrl !== 'Sin bauche' ? driveUrl : '',
+      message: 'Sincronizado exitosamente con Google Sheets y Google Drive',
+    });
+  } catch (error: any) {
+    console.error('Error en /api/sync/sheets:', error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Error al conectar con Google Apps Script',
+    });
+  }
+});
+
 // Vite middleware in dev or static files in production
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';

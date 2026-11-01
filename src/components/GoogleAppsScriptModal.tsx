@@ -11,18 +11,17 @@ export const APPS_SCRIPT_CODE = `/**
  * BARBERÍA BARÓN - SINCRONIZACIÓN GOOGLE SHEETS & GOOGLE DRIVE
  * ==============================================================
  * 
- * INSTRUCCIONES DE INSTALACIÓN (3 minutos):
+ * INSTRUCCIONES DE INSTALACIÓN (2 minutos):
  * 1. Abre https://script.google.com en tu navegador con tu cuenta de Google.
- * 2. Haz clic en "Nuevo proyecto" y nómbralo "Barbería Barón Sync".
- * 3. Borra todo el código existente y pega este script completo.
- * 4. Haz clic en "Implementar" (botón azul arriba a la derecha) > "Nueva implementación".
- * 5. Haz clic en el ícono de engranaje (⚙️) junto a "Seleccionar tipo" y elige "Aplicación web".
- * 6. Configuración obligatoria:
- *    - Descripción: "Sync Barberia Baron"
+ *    (O bien abre tu Google Sheet > Extensiones > Apps Script).
+ * 2. Borra todo el código existente y pega este script completo.
+ * 3. Haz clic en "Implementar" (botón azul) > "Nueva implementación".
+ * 4. Tipo: "Aplicación web".
+ *    - Descripción: "Barbería Barón Sync"
  *    - Ejecutar como: "Yo" (tu cuenta de Google)
- *    - Quién tiene acceso: "Cualquier persona" (Anyone) -> ¡IMPORTANTE PARA QUE LA APP PUEDA ENVIAR DATOS!
- * 7. Haz clic en "Implementar", autoriza los permisos requeridos.
- * 8. Copia la "URL de la aplicación web" (termina en /exec) y pégala en la Configuración de Barbería Barón.
+ *    - Quién tiene acceso: "Cualquier persona" (Anyone) -> OBLIGATORIO
+ * 5. Haz clic en "Implementar", autoriza los permisos requeridos en Google.
+ * 6. Copia la "URL de la aplicación web" (termina en /exec) y pégala en la Configuración de Barbería Barón.
  */
 
 function doGet(e) {
@@ -31,6 +30,7 @@ function doGet(e) {
     var stateJson = props.getProperty("BARON_APP_STATE");
     
     var response = {
+      ok: true,
       status: "success",
       state: stateJson ? JSON.parse(stateJson) : null,
       timestamp: new Date().toISOString()
@@ -39,7 +39,7 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify(response))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
@@ -49,34 +49,84 @@ function doPost(e) {
     var payload = JSON.parse(e.postData.contents);
     var props = PropertiesService.getScriptProperties();
     
-    // 1. Guardar estado completo para persistencia multi-dispositivo
-    if (payload.state) {
-      props.setProperty("BARON_APP_STATE", JSON.stringify(payload.state));
-      syncToSpreadsheet(payload.state, payload.voucher);
+    // Extraer campos del comprobante (soporta tanto nivel raíz como objeto voucher)
+    var vBase64 = payload.voucherBase64 || (payload.voucher && payload.voucher.voucherBase64) || "";
+    var stationNumber = payload.stationNumber || (payload.voucher && payload.voucher.stationNumber) || 1;
+    var barberName = payload.barberName || (payload.voucher && payload.voucher.barberName) || "Barbero";
+    var amount = payload.amount || (payload.voucher && payload.voucher.amount) || 0;
+    var method = payload.method || (payload.voucher && payload.voucher.method) || "Transferencia";
+    var type = payload.type || (payload.voucher && payload.voucher.type) || "Pago";
+    var notes = payload.notes || (payload.voucher && payload.voucher.notes) || "";
+    var status = payload.status || (payload.voucher && payload.voucher.status) || "Pendiente de Aprobación";
+    
+    var driveUrl = "Sin bauche";
+    
+    // 1. Si viene imagen de bauche, guardarla en carpeta de Google Drive
+    if (vBase64 && vBase64.length > 50) {
+      try {
+        driveUrl = saveVoucherToDrive(vBase64, stationNumber, barberName);
+      } catch (driveErr) {
+        Logger.log("Error guardando en Drive: " + driveErr.toString());
+        driveUrl = "Error al guardar en Drive: " + driveErr.toString();
+      }
     }
     
-    // 2. Si se adjuntó un bauche en base64, guardarlo en Google Drive
-    var driveFileUrl = "";
-    if (payload.voucher && payload.voucher.voucherBase64) {
-      driveFileUrl = saveVoucherToDrive(payload.voucher);
+    // 2. Sincronizar en Google Sheets
+    try {
+      syncToSpreadsheet(payload.state, {
+        stationNumber: stationNumber,
+        barberName: barberName,
+        amount: amount,
+        method: method,
+        type: type,
+        notes: notes,
+        status: status,
+        driveUrl: driveUrl
+      });
+    } catch (sheetErr) {
+      Logger.log("Error sincronizando Sheets: " + sheetErr.toString());
+    }
+    
+    // 3. Guardar estado general ligero (sin base64 pesados) para persistencia
+    if (payload.state) {
+      try {
+        var cleanState = JSON.parse(JSON.stringify(payload.state));
+        if (cleanState.payments) {
+          for (var i = 0; i < cleanState.payments.length; i++) {
+            if (cleanState.payments[i].voucherBase64 && cleanState.payments[i].voucherBase64.length > 200) {
+              cleanState.payments[i].voucherBase64 = "";
+            }
+          }
+        }
+        var stateStr = JSON.stringify(cleanState);
+        if (stateStr.length < 8500) {
+          props.setProperty("BARON_APP_STATE", stateStr);
+        }
+      } catch(e) {}
     }
     
     var response = {
+      ok: true,
       status: "success",
-      message: "Sincronización completada con éxito en Google Sheets & Drive",
-      driveFileUrl: driveFileUrl,
+      message: "Registrado exitosamente en Google Sheets y Google Drive",
+      driveUrl: driveUrl,
       timestamp: new Date().toISOString()
     };
     
     return ContentService.createTextOutput(JSON.stringify(response))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
 function getOrCreateSpreadsheet() {
+  try {
+    var active = SpreadsheetApp.getActiveSpreadsheet();
+    if (active) return active;
+  } catch(e) {}
+  
   var props = PropertiesService.getScriptProperties();
   var sheetId = props.getProperty("SPREADSHEET_ID");
   var ss;
@@ -103,84 +153,75 @@ function getOrCreateDriveFolder() {
   return DriveApp.createFolder(folderName);
 }
 
-function saveVoucherToDrive(voucher) {
-  try {
-    var folder = getOrCreateDriveFolder();
-    var base64Data = voucher.voucherBase64;
-    var contentType = "image/jpeg";
-    
-    if (base64Data.indexOf(";base64,") !== -1) {
-      var parts = base64Data.split(";base64,");
-      contentType = parts[0].replace("data:", "");
-      base64Data = parts[1];
-    }
-    
-    var decoded = Utilities.base64Decode(base64Data);
-    var blob = Utilities.newBlob(decoded, contentType, "Bauche_Puesto_" + voucher.stationNumber + "_" + voucher.barberName.replace(/\\s+/g, "_") + "_" + Utilities.formatDate(new Date(), "America/Bogota", "yyyy-MM-dd_HH-mm") + ".jpg");
-    var file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    return file.getUrl();
-  } catch (e) {
-    Logger.log("Error guardando en Drive: " + e.toString());
-    return "";
+function saveVoucherToDrive(base64Data, stationNumber, barberName) {
+  var folder = getOrCreateDriveFolder();
+  var contentType = "image/jpeg";
+  var cleanBase64 = base64Data;
+  
+  if (base64Data.indexOf(";base64,") !== -1) {
+    var parts = base64Data.split(";base64,");
+    contentType = parts[0].replace("data:", "");
+    cleanBase64 = parts[1];
   }
+  
+  var decoded = Utilities.base64Decode(cleanBase64);
+  var fileName = "Bauche_Puesto_" + stationNumber + "_" + barberName.replace(/\\s+/g, "_") + "_" + Utilities.formatDate(new Date(), "America/Bogota", "yyyy-MM-dd_HH-mm-ss") + ".jpg";
+  var blob = Utilities.newBlob(decoded, contentType, fileName);
+  var file = folder.createFile(blob);
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch(e) {}
+  return file.getUrl();
 }
 
-function syncToSpreadsheet(state, latestVoucher) {
+function syncToSpreadsheet(state, voucherInfo) {
   var ss = getOrCreateSpreadsheet();
   
-  // Pestaña 1: Resumen de Puestos
+  // 1. Pestaña: Resumen de Puestos y Saldos
   var resumenSheet = ss.getSheetByName("Resumen_Puestos");
   if (!resumenSheet) {
     resumenSheet = ss.insertSheet("Resumen_Puestos");
-    resumenSheet.appendRow(["PUESTO", "BARBERO", "SALDO PENDIENTE (COP)", "TARIFA DIARIA", "TEL WHATSAPP", "USUARIO", "ESTADO"]);
-    resumenSheet.getRange(1, 1, 1, 7).setBackground("#18181B").setFontColor("#D4AF37").setFontWeight("bold");
+    resumenSheet.appendRow(["PUESTO", "BARBERO", "SALDO PENDIENTE (COP)", "TARIFA DIARIA", "TEL WHATSAPP", "USUARIO", "ESTADO", "ÚLTIMA ACTUALIZACIÓN"]);
+    resumenSheet.getRange(1, 1, 1, 8).setBackground("#18181B").setFontColor("#D4AF37").setFontWeight("bold");
   }
   
-  // Actualizar las 4 filas de puestos
-  if (state.stations && state.stations.length) {
+  if (state && state.stations && state.stations.length) {
     for (var i = 0; i < state.stations.length; i++) {
       var s = state.stations[i];
       var row = i + 2;
-      resumenSheet.getRange(row, 1, 1, 7).setValues([[
+      resumenSheet.getRange(row, 1, 1, 8).setValues([[
         "Puesto #" + s.stationNumber,
         s.barberName,
         s.currentBalance,
         s.dailyRate,
         s.whatsapp,
         s.username,
-        s.currentBalance > 0 ? "Pendiente" : "Al Día"
+        s.currentBalance > 0 ? "Pendiente" : "Al Día",
+        Utilities.formatDate(new Date(), "America/Bogota", "yyyy-MM-dd HH:mm:ss")
       ]]);
     }
   }
   
-  // Pestaña 2: Historial de Pagos
+  // 2. Pestaña: Historial de Pagos
   var historialSheet = ss.getSheetByName("Historial_Pagos");
   if (!historialSheet) {
     historialSheet = ss.insertSheet("Historial_Pagos");
-    historialSheet.appendRow(["FECHA/HORA", "PUESTO", "BARBERO", "TIPO", "VALOR PAGADO", "MÉTODO", "VERIFICACIÓN IA", "REF BANCARIA", "ESTADO"]);
+    historialSheet.appendRow(["FECHA/HORA", "PUESTO", "BARBERO", "TIPO", "VALOR (COP)", "MÉTODO", "ESTADO", "LINK FOTO DRIVE", "NOTAS"]);
     historialSheet.getRange(1, 1, 1, 9).setBackground("#18181B").setFontColor("#D4AF37").setFontWeight("bold");
   }
   
-  // Si hay un voucher recién enviado, agregarlo
-  if (latestVoucher) {
-    var iaStatus = "Pendiente";
-    var ref = "";
-    if (latestVoucher.geminiResult) {
-      iaStatus = latestVoucher.geminiResult.matchStatus === "verified" ? "Verificado por Gemini IA" : "Discrepancia detectada";
-      ref = latestVoucher.geminiResult.referenceNumber || "";
-    }
-    
+  // Si viene un pago o bauche, agregarlo a una nueva fila
+  if (voucherInfo && voucherInfo.amount > 0) {
     historialSheet.appendRow([
       Utilities.formatDate(new Date(), "America/Bogota", "yyyy-MM-dd HH:mm:ss"),
-      "Puesto #" + latestVoucher.stationNumber,
-      latestVoucher.barberName,
-      latestVoucher.type || "Pago",
-      latestVoucher.amount,
-      latestVoucher.method,
-      iaStatus,
-      ref,
-      "Aprobado"
+      "Puesto #" + voucherInfo.stationNumber,
+      voucherInfo.barberName,
+      voucherInfo.type,
+      voucherInfo.amount,
+      voucherInfo.method,
+      voucherInfo.status,
+      voucherInfo.driveUrl,
+      voucherInfo.notes || ""
     ]);
   }
 }

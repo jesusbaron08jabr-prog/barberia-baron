@@ -31,7 +31,17 @@ import {
   Save,
   Layers,
   CalendarCheck,
-  UserCheck
+  UserCheck,
+  Trash2,
+  RotateCcw,
+  Calendar,
+  Search,
+  Check,
+  Ban,
+  XCircle,
+  Clock,
+  Filter,
+  ShieldCheck
 } from 'lucide-react';
 
 interface Props {
@@ -53,6 +63,8 @@ export const AdminDashboard: React.FC<Props> = ({
   // Modals
   const [showAppsScriptModal, setShowAppsScriptModal] = useState(false);
   const [showChargeConfirmModal, setShowChargeConfirmModal] = useState(false);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+  const [resetTotalCollected, setResetTotalCollected] = useState(true);
   const [adjustingStation, setAdjustingStation] = useState<BarberStation | null>(null);
   const [adjustAmount, setAdjustAmount] = useState('');
   const [adjustType, setAdjustType] = useState<'add' | 'subtract'>('add');
@@ -69,6 +81,10 @@ export const AdminDashboard: React.FC<Props> = ({
       // 1. Close any open modal first
       if (selectedPayment) {
         setSelectedPayment(null);
+        return;
+      }
+      if (showResetConfirmModal) {
+        setShowResetConfirmModal(false);
         return;
       }
       if (showChargeConfirmModal) {
@@ -104,6 +120,7 @@ export const AdminDashboard: React.FC<Props> = ({
   }, [
     activeTab,
     selectedPayment,
+    showResetConfirmModal,
     showChargeConfirmModal,
     adjustingStation,
     payingStation,
@@ -111,8 +128,12 @@ export const AdminDashboard: React.FC<Props> = ({
     onLogout,
   ]);
 
-  // Filter in Bauches tab
+  // Filter in Bauches / Pagos tab
   const [filterStation, setFilterStation] = useState<string>('all');
+  const [filterDate, setFilterDate] = useState<string>('');
+  const [filterPeriod, setFilterPeriod] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pendiente' | 'aprobado' | 'rechazado'>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Sync state
   const [isSyncing, setIsSyncing] = useState(false);
@@ -324,10 +345,159 @@ export const AdminDashboard: React.FC<Props> = ({
     setConfigStations(next);
   };
 
-  // Filter payments
-  const filteredPayments = filterStation === 'all'
-    ? appState.payments
-    : appState.payments.filter((p) => p.stationId === filterStation);
+  // 7. Aprobar Pago en Cuenta (Verificación manual por el Administrador)
+  const handleApprovePayment = (paymentId: string) => {
+    const targetPayment = appState.payments.find((p) => p.id === paymentId);
+    if (!targetPayment) return;
+
+    const updatedPayments = appState.payments.map((p) => {
+      if (p.id === paymentId) {
+        return {
+          ...p,
+          status: 'aprobado' as const,
+          approvedAt: new Date().toISOString(),
+          approvedBy: 'Administrador',
+        };
+      }
+      return p;
+    });
+
+    const newState: AppState = {
+      ...appState,
+      payments: updatedPayments,
+    };
+
+    onUpdateState(newState, {
+      stationNumber: targetPayment.stationNumber,
+      barberName: targetPayment.barberName,
+      amount: targetPayment.amount,
+      method: targetPayment.method,
+      type: targetPayment.type,
+      notes: targetPayment.notes,
+      status: 'Aprobado por Administrador',
+      timestamp: new Date().toISOString(),
+      voucherBase64: targetPayment.voucherBase64,
+    });
+  };
+
+  // 8. Rechazar Pago (Revierte el saldo al barbero si fue abonado)
+  const handleRejectPayment = (paymentId: string) => {
+    const targetPayment = appState.payments.find((p) => p.id === paymentId);
+    if (!targetPayment) return;
+
+    // Si el pago no fue acreditado, devolvemos el saldo al barbero
+    const updatedStations = appState.stations.map((s) => {
+      if (s.id === targetPayment.stationId) {
+        return { ...s, currentBalance: s.currentBalance + targetPayment.amount };
+      }
+      return s;
+    });
+
+    const updatedPayments = appState.payments.map((p) => {
+      if (p.id === paymentId) {
+        return {
+          ...p,
+          status: 'rechazado' as const,
+          rejectionReason: 'Dinero no verificado en la cuenta bancaria',
+        };
+      }
+      return p;
+    });
+
+    const newTotalCollected = Math.max(0, appState.totalCollected - targetPayment.amount);
+
+    const newState: AppState = {
+      ...appState,
+      stations: updatedStations,
+      payments: updatedPayments,
+      totalCollected: newTotalCollected,
+    };
+
+    onUpdateState(newState, {
+      stationNumber: targetPayment.stationNumber,
+      barberName: targetPayment.barberName,
+      amount: targetPayment.amount,
+      method: targetPayment.method,
+      type: targetPayment.type,
+      notes: targetPayment.notes,
+      status: 'Rechazado por Administrador',
+      timestamp: new Date().toISOString(),
+      voucherBase64: targetPayment.voucherBase64,
+    });
+  };
+
+  // 9. Resetear Registros de Pagos
+  const handleResetPaymentRecords = () => {
+    const newState: AppState = {
+      ...appState,
+      payments: [],
+      totalCollected: resetTotalCollected ? 0 : appState.totalCollected,
+    };
+
+    onUpdateState(newState, {
+      notes: 'Historial de pagos reseteado por el Administrador',
+    });
+
+    setShowResetConfirmModal(false);
+  };
+
+  // Filtrado avanzado de pagos por Barbero, Fecha, Periodo, Estado y Búsqueda
+  const filteredPayments = appState.payments.filter((p) => {
+    // 1. Filtro por Barbero/Puesto
+    if (filterStation !== 'all' && p.stationId !== filterStation) return false;
+
+    // 2. Filtro por Estado
+    if (filterStatus !== 'all') {
+      const isPending = !p.status || p.status === 'pendiente' || p.status === 'pendiente_revision';
+      if (filterStatus === 'pendiente' && !isPending) return false;
+      if (filterStatus === 'aprobado' && p.status !== 'aprobado') return false;
+      if (filterStatus === 'rechazado' && p.status !== 'rechazado') return false;
+    }
+
+    // 3. Filtro por Fecha específica (YYYY-MM-DD del datepicker)
+    if (filterDate) {
+      const pDate = p.timestamp ? p.timestamp.slice(0, 10) : '';
+      if (pDate !== filterDate) return false;
+    }
+
+    // 4. Filtro por Periodo Rápido
+    if (filterPeriod !== 'all' && p.timestamp) {
+      const pTime = new Date(p.timestamp).getTime();
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const yesterdayStart = todayStart - 86400000;
+      const weekStart = todayStart - 7 * 86400000;
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+      if (filterPeriod === 'today') {
+        if (pTime < todayStart) return false;
+      } else if (filterPeriod === 'yesterday') {
+        if (pTime < yesterdayStart || pTime >= todayStart) return false;
+      } else if (filterPeriod === 'week') {
+        if (pTime < weekStart) return false;
+      } else if (filterPeriod === 'month') {
+        if (pTime < monthStart) return false;
+      }
+    }
+
+    // 5. Búsqueda por texto (nombre barbero, notas, fecha formateada, monto, método)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const matchName = p.barberName?.toLowerCase().includes(q);
+      const matchNotes = p.notes?.toLowerCase().includes(q);
+      const matchDate = p.formattedDate?.toLowerCase().includes(q);
+      const matchMethod = p.method?.toLowerCase().includes(q);
+      const matchAmount = p.amount?.toString().includes(q);
+      if (!matchName && !matchNotes && !matchDate && !matchMethod && !matchAmount) return false;
+    }
+
+    return true;
+  });
+
+  const filteredTotal = filteredPayments.reduce((acc, p) => acc + p.amount, 0);
+  const pendingCount = appState.payments.filter(
+    (p) => !p.status || p.status === 'pendiente' || p.status === 'pendiente_revision'
+  ).length;
 
   return (
     <div className="min-h-screen bg-[#09090B] text-zinc-100 flex flex-col pb-20">
@@ -642,12 +812,12 @@ export const AdminDashboard: React.FC<Props> = ({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 2: HISTORIAL DE BAUCHES Y COMPROBANTES                     */}
+        {/* TAB 2: HISTORIAL DE PAGOS, FECHAS & APROBACIÓN DE BAUCHES       */}
         {/* ============================================================== */}
         {activeTab === 'bauches' && (
           <div className="space-y-4">
             {/* Back button to Puestos */}
-            <div className="flex items-center">
+            <div className="flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => setActiveTab('puestos')}
@@ -656,64 +826,238 @@ export const AdminDashboard: React.FC<Props> = ({
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>← Volver a los 4 Puestos y Saldos</span>
               </button>
+
+              {/* Botón para Resetear Registros de Pagos */}
+              <button
+                type="button"
+                onClick={() => setShowResetConfirmModal(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-700/50 text-red-300 text-xs font-bold transition shadow-sm"
+                title="Resetear o vaciar el historial de pagos"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Resetear Pagos</span>
+              </button>
             </div>
 
-            {/* Header & Filter */}
-            <div className="p-4 rounded-3xl bg-[#18181B] border border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div>
-                <h3 className="font-cinzel text-base font-bold text-white flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#D4AF37]" />
-                  <span>Historial de Comprobantes & Auditoría IA</span>
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  Verificación de comprobantes leídos por Gemini AI
-                </p>
+            {/* Header & Main Stats */}
+            <div className="p-5 rounded-3xl bg-[#18181B] border border-zinc-800 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-cinzel text-lg font-bold text-white flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-[#D4AF37]" />
+                    <span>Control de Pagos y Verificación de Bauches</span>
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Verifica que el dinero esté en tu cuenta bancaria antes de aprobar cada pago
+                  </p>
+                </div>
+
+                {pendingCount > 0 && (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-950/60 border border-amber-600/50 text-amber-300 text-xs font-bold animate-pulse">
+                    <Clock className="w-4 h-4" />
+                    <span>{pendingCount} {pendingCount === 1 ? 'pago pendiente' : 'pagos pendientes'} por verificar</span>
+                  </div>
+                )}
               </div>
 
-              {/* Station Filter */}
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <span className="text-xs text-zinc-400 font-medium">Filtrar:</span>
-                <select
-                  value={filterStation}
-                  onChange={(e) => setFilterStation(e.target.value)}
-                  className="px-3 py-1.5 rounded-xl bg-[#09090B] border border-zinc-750 text-xs font-medium text-white focus:outline-none focus:border-[#D4AF37]"
-                >
-                  <option value="all">Todos los 4 Puestos</option>
-                  <option value="barbero1">Puesto #1 (Carlos Mendoza)</option>
-                  <option value="barbero2">Puesto #2 (Andrés Silva)</option>
-                  <option value="barbero3">Puesto #3 (Mateo Gómez)</option>
-                  <option value="barbero4">Puesto #4 (David Herrera)</option>
-                </select>
+              {/* BARRA DE FILTROS: BARBERO, FECHA, PERIODO Y BÚSQUEDA */}
+              <div className="pt-2 border-t border-zinc-850 space-y-3">
+                {/* 1. Selector de Barbero */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <span className="text-xs font-semibold uppercase text-zinc-400 tracking-wider flex items-center gap-1.5 min-w-[70px]">
+                    <UserCheck className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    Barbero:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 flex-1">
+                    <button
+                      type="button"
+                      onClick={() => setFilterStation('all')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                        filterStation === 'all'
+                          ? 'gold-button-gradient text-black shadow-md'
+                          : 'bg-[#09090B] text-zinc-300 hover:text-white border border-zinc-800'
+                      }`}
+                    >
+                      Todos (4)
+                    </button>
+                    {appState.stations.map((st) => (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={() => setFilterStation(st.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                          filterStation === st.id
+                            ? 'gold-button-gradient text-black shadow-md'
+                            : 'bg-[#09090B] text-zinc-300 hover:text-white border border-zinc-800'
+                        }`}
+                      >
+                        <span>P#{st.stationNumber}</span>
+                        <span className="hidden sm:inline font-normal">{st.barberName.split(' ')[0]}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Filtro de Fechas y Periodo */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <span className="text-xs font-semibold uppercase text-zinc-400 tracking-wider flex items-center gap-1.5 min-w-[70px]">
+                    <Calendar className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    Fecha:
+                  </span>
+                  
+                  {/* Periodos Rápidos */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[
+                      { id: 'all', label: 'Cualquier Fecha' },
+                      { id: 'today', label: 'Hoy' },
+                      { id: 'yesterday', label: 'Ayer' },
+                      { id: 'week', label: 'Esta Semana' },
+                      { id: 'month', label: 'Este Mes' },
+                    ].map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setFilterPeriod(p.id as any);
+                          setFilterDate('');
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+                          filterPeriod === p.id && !filterDate
+                            ? 'bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/50'
+                            : 'bg-[#09090B] text-zinc-400 hover:text-zinc-200 border border-zinc-800'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Date Picker para seleccionar un día específico */}
+                  <div className="flex items-center gap-1.5 mt-1 sm:mt-0">
+                    <input
+                      type="date"
+                      value={filterDate}
+                      onChange={(e) => {
+                        setFilterDate(e.target.value);
+                        setFilterPeriod('all');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-[#09090B] border border-zinc-700 text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                    />
+                    {filterDate && (
+                      <button
+                        type="button"
+                        onClick={() => setFilterDate('')}
+                        className="text-xs text-zinc-400 hover:text-white"
+                        title="Quitar fecha específica"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Filtro por Estado & Búsqueda */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  {/* Filtro Estado */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-zinc-400 min-w-[70px]">Estado:</span>
+                    <select
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value as any)}
+                      className="flex-1 px-3 py-1.5 rounded-xl bg-[#09090B] border border-zinc-750 text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                    >
+                      <option value="all">Todos los Estados</option>
+                      <option value="pendiente">⏳ Pendientes de Aprobación</option>
+                      <option value="aprobado">✅ Aprobados en Cuenta</option>
+                      <option value="rechazado">❌ Rechazados</option>
+                    </select>
+                  </div>
+
+                  {/* Buscador de texto */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por barbero, nota o valor..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-[#09090B] border border-zinc-750 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+                </div>
+
+                {/* Resumen del filtro activo */}
+                <div className="flex items-center justify-between text-xs text-zinc-400 pt-1 border-t border-zinc-850">
+                  <div className="flex items-center gap-2">
+                    <span>
+                      Mostrando <strong className="text-white">{filteredPayments.length}</strong> de{' '}
+                      <strong className="text-white">{appState.payments.length}</strong> pagos
+                    </span>
+                    <span>•</span>
+                    <span>
+                      Total Filtrado: <strong className="text-emerald-400 font-cinzel font-bold">{formatCOP(filteredTotal)}</strong>
+                    </span>
+                  </div>
+
+                  {(filterStation !== 'all' || filterDate || filterPeriod !== 'all' || filterStatus !== 'all' || searchQuery) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterStation('all');
+                        setFilterDate('');
+                        setFilterPeriod('all');
+                        setFilterStatus('all');
+                        setSearchQuery('');
+                      }}
+                      className="text-xs text-[#D4AF37] hover:underline font-semibold"
+                    >
+                      Limpiar filtros
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
             {/* List of Payments */}
             {filteredPayments.length === 0 ? (
-              <div className="p-12 rounded-3xl bg-[#18181B] border border-zinc-800 text-center text-zinc-500 text-xs">
-                No hay pagos registrados bajo este filtro.
+              <div className="p-12 rounded-3xl bg-[#18181B] border border-zinc-800 text-center text-zinc-500 text-xs space-y-2">
+                <p>No hay pagos registrados que coincidan con los filtros seleccionados.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterStation('all');
+                    setFilterDate('');
+                    setFilterPeriod('all');
+                    setFilterStatus('all');
+                    setSearchQuery('');
+                  }}
+                  className="text-[#D4AF37] underline text-xs font-bold"
+                >
+                  Restablecer todos los filtros
+                </button>
               </div>
             ) : (
               <div className="space-y-3">
                 {filteredPayments.map((p) => {
-                  const v = p.geminiVerification;
+                  const isPending = !p.status || p.status === 'pendiente' || p.status === 'pendiente_revision';
+                  const isApproved = p.status === 'aprobado';
+                  const isRejected = p.status === 'rechazado';
+
                   return (
                     <div
                       key={p.id}
                       onClick={() => setSelectedPayment(p)}
-                      className="p-4 rounded-2xl bg-[#18181B] border border-zinc-800 hover:border-[#D4AF37]/50 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 group shadow-md"
+                      className={`p-4 rounded-2xl bg-[#18181B] border transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 group shadow-md ${
+                        isPending
+                          ? 'border-amber-600/40 hover:border-amber-500 bg-gradient-to-r from-[#18181B] to-[#1F1B12]'
+                          : 'border-zinc-800 hover:border-[#D4AF37]/50'
+                      }`}
                     >
-                      {/* Left side: thumbnail + info */}
+                      {/* Left side: ALWAYS GOLD COIN ICON + info (Uniform design for all stalls) */}
                       <div className="flex items-center gap-3.5">
-                        <div className="w-14 h-14 rounded-2xl bg-black border border-zinc-800 overflow-hidden flex-shrink-0 flex items-center justify-center relative">
-                          {p.voucherBase64 ? (
-                            <img
-                              src={p.voucherBase64}
-                              alt="Voucher"
-                              className="w-full h-full object-cover group-hover:scale-105 transition"
-                            />
-                          ) : (
-                            <DollarSign className="w-6 h-6 text-[#D4AF37]" />
-                          )}
+                        {/* UNIFORM GOLD COIN ICON: Always displayed identically across all stalls */}
+                        <div className="w-12 h-12 rounded-2xl bg-[#09090B] border border-[#D4AF37]/35 flex-shrink-0 flex items-center justify-center text-[#D4AF37] shadow-inner group-hover:border-[#D4AF37]/60 transition">
+                          <DollarSign className="w-6 h-6 text-[#D4AF37]" />
                         </div>
 
                         <div>
@@ -733,37 +1077,64 @@ export const AdminDashboard: React.FC<Props> = ({
                             </span>
                           </div>
 
-                          <div className="text-[11px] text-zinc-400 mt-0.5">
+                          <div className="text-[11px] text-zinc-400 mt-0.5 flex flex-wrap items-center gap-2">
                             <span>{p.formattedDate}</span>
-                            {p.notes && <span> • Nota: "{p.notes}"</span>}
+                            {p.notes && <span>• Nota: "{p.notes}"</span>}
                           </div>
                         </div>
                       </div>
 
-                      {/* Right side: Gemini AI Tag & View button */}
-                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-850">
-                        {v ? (
-                          <div className="flex flex-col items-start sm:items-end">
-                            <span
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
-                                v.matchStatus === 'verified'
-                                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
-                                  : v.matchStatus === 'discrepancy'
-                                  ? 'bg-amber-950/80 text-amber-300 border-amber-700/60'
-                                  : 'bg-zinc-900 text-zinc-300 border-zinc-750'
-                              }`}
-                            >
-                              <Sparkles className="w-3 h-3 text-[#D4AF37]" />
-                              <span>
-                                {v.matchStatus === 'verified' ? 'Verificado por IA' : 'Revisión IA'}
-                              </span>
+                      {/* Right side: Verification Status & Direct Admin Action Buttons */}
+                      <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-850">
+                        {/* Status Badges */}
+                        {isPending ? (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-950/70 text-amber-300 border border-amber-600/50">
+                              <Clock className="w-3 h-3 animate-pulse" />
+                              <span>Pendiente en Cuenta</span>
                             </span>
-                            <span className="text-[10px] text-zinc-400 mt-1 font-mono">
-                              Ref: {v.referenceNumber || 'N/A'} • {v.paymentPlatform || p.method}
+
+                            {/* Direct 1-Click Approve / Reject Buttons */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleApprovePayment(p.id);
+                              }}
+                              className="px-3 py-1.5 rounded-xl gold-button-gradient text-xs font-bold flex items-center gap-1 shadow-md hover:opacity-90 transition"
+                              title="Aprobar pago verificado en cuenta"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Aprobar</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRejectPayment(p.id);
+                              }}
+                              className="px-2.5 py-1.5 rounded-xl bg-zinc-850 hover:bg-red-950 text-zinc-300 hover:text-red-300 border border-zinc-700 text-xs font-semibold flex items-center gap-1 transition"
+                              title="Rechazar comprobante"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Rechazar</span>
+                            </button>
+                          </div>
+                        ) : isApproved ? (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-950/70 text-emerald-300 border border-emerald-700/60">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Aprobado en Cuenta</span>
                             </span>
                           </div>
                         ) : (
-                          <span className="text-[11px] text-zinc-500">En efectivo / Directo</span>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-950/70 text-red-300 border border-red-700/60">
+                              <XCircle className="w-3 h-3" />
+                              <span>Rechazado</span>
+                            </span>
+                          </div>
                         )}
 
                         <button
@@ -1332,7 +1703,71 @@ export const AdminDashboard: React.FC<Props> = ({
       <VoucherDetailModal
         payment={selectedPayment}
         onClose={() => setSelectedPayment(null)}
+        isAdmin={true}
+        onApprove={handleApprovePayment}
+        onReject={handleRejectPayment}
       />
+
+      {/* Modal para Resetear Registros de Pagos */}
+      {showResetConfirmModal && (
+        <div
+          onClick={() => setShowResetConfirmModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-[#18181B] border border-red-600/50 p-6 shadow-2xl space-y-4 cursor-default"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-red-950/60 border border-red-600/50 flex items-center justify-center text-red-400 flex-shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-cinzel text-lg font-bold text-white">
+                  ¿Resetear Historial de Pagos?
+                </h3>
+                <p className="text-xs text-zinc-400">Esta acción eliminará todos los registros de bauches guardados.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-300 leading-relaxed bg-[#09090B] p-3.5 rounded-2xl border border-zinc-800">
+              Se vaciará el listado de comprobantes registrados en la aplicación. Los saldos pendientes de los puestos se mantendrán intactos para no afectar las deudas vigentes de los barberos.
+            </p>
+
+            {/* Checkbox para reiniciar Total Recaudado */}
+            <label className="flex items-center gap-2.5 p-3 rounded-xl bg-[#09090B] border border-zinc-800 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={resetTotalCollected}
+                onChange={(e) => setResetTotalCollected(e.target.checked)}
+                className="w-4 h-4 rounded text-[#D4AF37] focus:ring-[#D4AF37] bg-zinc-900 border-zinc-700"
+              />
+              <span className="text-xs font-semibold text-zinc-200">
+                Reiniciar también el contador de "Total Recaudado" a $0 COP
+              </span>
+            </label>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowResetConfirmModal(false)}
+                className="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Cancelar</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleResetPaymentRecords}
+                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white text-xs font-black uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Vaciar Historial</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Google Apps Script Modal */}
       <GoogleAppsScriptModal

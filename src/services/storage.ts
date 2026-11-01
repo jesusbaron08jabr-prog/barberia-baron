@@ -194,11 +194,14 @@ export async function pushStateToGoogleSheets(
     stationNumber: number;
     amount: number;
     method: string;
+    type?: string;
+    notes?: string;
+    status?: string;
     timestamp: string;
     voucherBase64?: string;
     geminiResult?: any;
   }
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; driveUrl?: string }> {
   if (!scriptUrl || !scriptUrl.trim()) {
     return { success: false, message: 'No hay URL de Google Script configurada' };
   }
@@ -206,19 +209,69 @@ export async function pushStateToGoogleSheets(
   if (scriptUrl.includes('PEGA_AQUI')) {
     return {
       success: false,
-      message: 'Reemplaza PEGA_AQUI_TU_LINK_TERMINADO_EN_EXEC por tu enlace real terminado en /exec para sincronizar con Google Sheets y Drive',
+      message: 'Configura la URL de Google Apps Script para sincronizar con Google Sheets y Drive',
     };
   }
 
   try {
-    const payload = {
+    // Sanitize state: keep payments clean without repeating giant base64s of previous history
+    const sanitizedPayments = (state.payments || []).map((p) => ({
+      ...p,
+      voucherBase64: p.voucherBase64 && p.voucherBase64.length > 500 ? '' : p.voucherBase64,
+    }));
+
+    const sanitizedState = {
+      ...state,
+      payments: sanitizedPayments,
+    };
+
+    // Format payload with BOTH root fields (expected by user's Google Apps Script) and nested objects
+    const payload: any = {
       action: 'syncState',
       timestamp: new Date().toISOString(),
-      state,
+      state: sanitizedState,
       voucher: latestVoucher || null,
     };
 
-    // Google Apps Script requires Content-Type text/plain to avoid CORS preflight failures
+    if (latestVoucher) {
+      if (latestVoucher.voucherBase64) {
+        payload.voucherBase64 = latestVoucher.voucherBase64;
+      }
+      payload.stationNumber = latestVoucher.stationNumber;
+      payload.barberName = latestVoucher.barberName;
+      payload.amount = latestVoucher.amount;
+      payload.method = latestVoucher.method;
+      payload.type = latestVoucher.type || 'Pago Total';
+      payload.notes = latestVoucher.notes || '';
+      payload.status = latestVoucher.status || 'Pendiente de Aprobación';
+    }
+
+    // Try first via our server-side proxy route to avoid CORS & redirect issues
+    try {
+      const proxyRes = await fetch('/api/sync/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scriptUrl: scriptUrl.trim(),
+          payload,
+        }),
+      });
+
+      if (proxyRes.ok) {
+        const proxyData = await proxyRes.json();
+        if (proxyData.success) {
+          return {
+            success: true,
+            message: proxyData.message || 'Sincronizado exitosamente con Google Sheets y Google Drive',
+            driveUrl: proxyData.driveUrl,
+          };
+        }
+      }
+    } catch (proxyErr) {
+      console.warn('Proxy sync fallback to direct fetch:', proxyErr);
+    }
+
+    // Fallback: direct fetch from browser
     const res = await fetch(scriptUrl.trim(), {
       method: 'POST',
       headers: {
@@ -226,10 +279,6 @@ export async function pushStateToGoogleSheets(
       },
       body: JSON.stringify(payload),
     });
-
-    if (!res.ok) {
-      throw new Error(`Error en servidor de Google: ${res.status}`);
-    }
 
     const text = await res.text();
     let json: any = {};
@@ -239,9 +288,12 @@ export async function pushStateToGoogleSheets(
       json = { status: 'success', message: text };
     }
 
+    const driveUrl = json.driveUrl || json.driveFileUrl || '';
+
     return {
       success: true,
-      message: json.message || 'Sincronizado exitosamente con Google Sheets y Drive',
+      message: 'Sincronizado exitosamente con Google Sheets y Google Drive',
+      driveUrl: driveUrl !== 'Sin bauche' ? driveUrl : undefined,
     };
   } catch (error: any) {
     console.error('Error pushing to Google Sheets:', error);

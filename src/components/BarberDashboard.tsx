@@ -125,41 +125,15 @@ export const BarberDashboard: React.FC<Props> = ({
     });
   };
 
-  // Image upload handler + Automatic Gemini AI verification call
+  // Image upload handler
   const handleImageSelected = async (file: File) => {
     try {
       setFormError('');
       const compressed = await compressImage(file);
       setVoucherBase64(compressed);
-
-      // Trigger server-side Gemini AI verification
-      setIsAnalyzingAI(true);
-      const reportedVal = parseCOPInput(amountInput) || (paymentType === 'total' ? station.currentBalance : 0);
-
-      const res = await fetch('/api/gemini/verify-voucher', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: compressed,
-          reportedAmount: reportedVal,
-          reportedMethod: method,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.verification) {
-          setAiResult(data.verification);
-          // If Gemini clearly extracted an amount and user chose 'abono', suggest updating amount
-          if (paymentType === 'abono' && data.verification.extractedAmount && (!amountInput || amountInput === '0')) {
-            setAmountInput(formatNumberWithDots(data.verification.extractedAmount));
-          }
-        }
-      }
     } catch (e) {
-      console.warn('Error al verificar comprobante con IA:', e);
-    } finally {
-      setIsAnalyzingAI(false);
+      console.warn('Error al procesar la imagen:', e);
+      setFormError('No se pudo procesar la imagen seleccionada');
     }
   };
 
@@ -203,16 +177,7 @@ export const BarberDashboard: React.FC<Props> = ({
           hour: '2-digit',
           minute: '2-digit',
         }),
-        geminiVerification: aiResult || {
-          extractedAmount: parsedAmount,
-          extractedDate: new Date().toLocaleTimeString('es-CO'),
-          referenceNumber: 'REF-' + Math.floor(100000 + Math.random() * 900000),
-          paymentPlatform: method,
-          matchStatus: 'verified',
-          confidence: 'medium',
-          analysisNotes: 'Comprobante procesado y registrado por el barbero.',
-        },
-        status: 'aprobado',
+        status: 'pendiente',
         notes: notes.trim(),
       };
 
@@ -237,17 +202,17 @@ export const BarberDashboard: React.FC<Props> = ({
         type: paymentType === 'total' ? 'Pago Total' : 'Abono Parcial',
         amount: parsedAmount,
         method,
+        notes: notes.trim(),
+        status: 'Pendiente de Aprobación',
         timestamp: newRecord.timestamp,
         voucherBase64,
-        geminiResult: newRecord.geminiVerification,
       });
 
       // Reset form
       setSuccessMessage(
-        `¡Pago de ${formatCOP(parsedAmount)} registrado exitosamente! Tu saldo restante es: ${formatCOP(newBal)}`
+        `¡Comprobante enviado exitosamente! Tu reporte de ${formatCOP(parsedAmount)} quedó registrado. El administrador verificará el ingreso en su cuenta bancaria.`
       );
       setVoucherBase64('');
-      setAiResult(null);
       setNotes('');
       if (paymentType === 'total') {
         setAmountInput(newBal > 0 ? formatNumberWithDots(newBal) : '');
@@ -690,17 +655,9 @@ export const BarberDashboard: React.FC<Props> = ({
                   className="p-3.5 rounded-2xl bg-[#09090B] border border-zinc-850 hover:border-[#D4AF37]/50 transition cursor-pointer flex items-center justify-between gap-3 group"
                 >
                   <div className="flex items-center gap-3">
-                    {/* Thumbnail */}
-                    <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden flex-shrink-0 flex items-center justify-center text-zinc-600">
-                      {p.voucherBase64 ? (
-                        <img
-                          src={p.voucherBase64}
-                          alt="Thumbnail"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <CreditCard className="w-5 h-5 text-zinc-600" />
-                      )}
+                    {/* Uniform Gold Coin Icon */}
+                    <div className="w-12 h-12 rounded-2xl bg-[#09090B] border border-[#D4AF37]/35 flex-shrink-0 flex items-center justify-center text-[#D4AF37] shadow-inner">
+                      <DollarSign className="w-6 h-6 text-[#D4AF37]" />
                     </div>
 
                     <div>
@@ -721,10 +678,19 @@ export const BarberDashboard: React.FC<Props> = ({
                   </div>
 
                   <div className="text-right flex items-center gap-2">
-                    {p.geminiVerification && (
-                      <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-medium text-[#D4AF37] bg-[#D4AF37]/10 px-2 py-0.5 rounded-full border border-[#D4AF37]/30">
-                        <Sparkles className="w-3 h-3" />
-                        IA
+                    {p.status === 'aprobado' ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-700/50">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Aprobado
+                      </span>
+                    ) : p.status === 'rechazado' ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-950/60 px-2.5 py-0.5 rounded-full border border-red-700/50">
+                        ✕ Rechazado
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/60 px-2.5 py-0.5 rounded-full border border-amber-700/50">
+                        <Clock className="w-3 h-3 animate-pulse" />
+                        Pendiente
                       </span>
                     )}
                     <Eye className="w-4 h-4 text-zinc-500 group-hover:text-[#D4AF37] transition" />
