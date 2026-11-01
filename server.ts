@@ -119,6 +119,51 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', app: 'Barbería Barón API', timestamp: new Date().toISOString() });
 });
 
+// Endpoint to proxy Google Apps Script queries via GET
+app.get('/api/sync/sheets', async (req, res) => {
+  try {
+    const scriptUrl = req.query.scriptUrl as string;
+    const action = (req.query.action as string) || 'getState';
+    const barberId = (req.query.barberId as string) || '';
+
+    if (!scriptUrl || typeof scriptUrl !== 'string' || !scriptUrl.trim()) {
+      return res.status(400).json({ success: false, error: 'No se proporcionó la URL de Google Script' });
+    }
+
+    const cleanUrl = scriptUrl.trim();
+    const targetUrl = new URL(cleanUrl);
+    targetUrl.searchParams.set('action', action);
+    if (barberId) targetUrl.searchParams.set('barberId', barberId);
+
+    const googleRes = await fetch(targetUrl.toString(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      redirect: 'follow',
+    });
+
+    const text = await googleRes.text();
+    let json: any = {};
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { ok: true, raw: text };
+    }
+
+    return res.json({
+      success: true,
+      data: json,
+    });
+  } catch (error: any) {
+    console.error('Error en GET /api/sync/sheets:', error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Error al conectar con Google Apps Script',
+    });
+  }
+});
+
 // Endpoint to proxy Google Apps Script sync (handles CORS, redirects, and Drive URL extraction)
 app.post('/api/sync/sheets', async (req, res) => {
   try {
@@ -153,7 +198,7 @@ app.post('/api/sync/sheets', async (req, res) => {
       success: true,
       data: json,
       driveUrl: driveUrl !== 'Sin bauche' ? driveUrl : '',
-      message: 'Sincronizado exitosamente con Google Sheets y Google Drive',
+      message: json.message || 'Sincronizado exitosamente con Google Sheets y Google Drive',
     });
   } catch (error: any) {
     console.error('Error en /api/sync/sheets:', error);

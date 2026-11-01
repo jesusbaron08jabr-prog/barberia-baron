@@ -161,10 +161,26 @@ export function saveLocalState(state: AppState) {
 }
 
 // Google Sheets & Drive Web App Sync API
-export async function fetchStateFromGoogleSheets(scriptUrl: string): Promise<AppState | null> {
+export async function fetchStateFromGoogleSheets(scriptUrl: string, barberId?: string): Promise<AppState | null> {
   if (!scriptUrl || !scriptUrl.trim() || scriptUrl.includes('PEGA_AQUI')) return null;
+  const cleanUrl = scriptUrl.trim();
+
+  // Try proxy first
   try {
-    const cleanUrl = scriptUrl.trim();
+    const proxyUrl = `/api/sync/sheets?scriptUrl=${encodeURIComponent(cleanUrl)}&action=getState${barberId ? `&barberId=${encodeURIComponent(barberId)}` : ''}`;
+    const proxyRes = await fetch(proxyUrl);
+    if (proxyRes.ok) {
+      const data = await proxyRes.json();
+      if (data && data.success && data.data && data.data.state) {
+        return data.data.state as AppState;
+      }
+    }
+  } catch (proxyErr) {
+    console.warn('Proxy GET fetch failed, attempting direct fetch:', proxyErr);
+  }
+
+  // Fallback direct fetch
+  try {
     const url = cleanUrl.includes('?') ? `${cleanUrl}&action=getState` : `${cleanUrl}?action=getState`;
     const res = await fetch(url, {
       method: 'GET',
@@ -181,7 +197,7 @@ export async function fetchStateFromGoogleSheets(scriptUrl: string): Promise<App
     }
     return null;
   } catch (error) {
-    console.warn('Error fetching state from Google Sheets:', error);
+    console.warn('Error fetching state directly from Google Sheets:', error);
     return null;
   }
 }
