@@ -1,7 +1,7 @@
 import { AppState, BarberStation, PaymentRecord } from '../types/barberia';
 
-const STORAGE_KEY = 'barberia_baron_state_v2';
-const PREV_STORAGE_KEY = 'barberia_baron_state_v1';
+const STORAGE_KEY = 'barberia_baron_state_v3';
+const PREV_KEYS = ['barberia_baron_state_v2', 'barberia_baron_state_v1'];
 
 export const INITIAL_STATIONS: BarberStation[] = [
   {
@@ -61,6 +61,9 @@ export const INITIAL_STATE: AppState = {
     scriptUrl: 'https://script.google.com/macros/s/AKfycbxGFjtNNYgWf91FZOhZHZjMfx5zXpnPVd1nNtCyJ-gwYMc5DPecLvj06W_RCJKZB-wM/exec',
     lastSyncedAt: null,
     autoSync: true,
+    appAuthorized: false,
+    authorizedAt: null,
+    authorizedBy: null,
   },
   totalCollected: 0,
 };
@@ -71,41 +74,43 @@ export function loadLocalState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      // Si existe estado anterior v1, migrar configuraciones pero reiniciar saldos pendientes y total a $0
-      const prevRaw = localStorage.getItem(PREV_STORAGE_KEY);
-      if (prevRaw) {
-        try {
-          const prevParsed = JSON.parse(prevRaw);
-          const existingUrl = prevParsed.config?.scriptUrl;
-          const resolvedUrl = !existingUrl || existingUrl.trim() === '' || existingUrl.includes('PEGA_AQUI')
-            ? DEFAULT_SCRIPT_URL
-            : existingUrl;
-
-          const migratedStations = (prevParsed.stations || INITIAL_STATIONS).map((st: BarberStation) => ({
-            ...st,
-            currentBalance: 0, // Reiniciar contador de saldos pendientes a 0 COP
-          }));
-
-          const migratedState: AppState = {
-            ...INITIAL_STATE,
-            stations: migratedStations,
-            payments: [],
-            chargeLogs: [],
-            totalCollected: 0,
-            config: {
-              ...INITIAL_STATE.config,
-              ...(prevParsed.config || {}),
-              scriptUrl: resolvedUrl,
-            },
-          };
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(migratedState));
-          return migratedState;
-        } catch (e) {
-          console.warn('Error al migrar estado v1:', e);
+      // Si no existe v3, buscar configuración de versiones anteriores pero reiniciar todos los saldos y contadores a $0
+      let priorScriptUrl = DEFAULT_SCRIPT_URL;
+      let priorAdminPass = 'baron2026';
+      for (const pk of PREV_KEYS) {
+        const prev = localStorage.getItem(pk);
+        if (prev) {
+          try {
+            const p = JSON.parse(prev);
+            if (p.config?.scriptUrl && !p.config.scriptUrl.includes('PEGA_AQUI')) {
+              priorScriptUrl = p.config.scriptUrl;
+            }
+            if (p.config?.adminPassword) {
+              priorAdminPass = p.config.adminPassword;
+            }
+          } catch {}
         }
       }
-      return INITIAL_STATE;
+
+      const freshZeroState: AppState = {
+        ...INITIAL_STATE,
+        stations: INITIAL_STATIONS.map((s) => ({ ...s, currentBalance: 0 })),
+        payments: [],
+        chargeLogs: [],
+        totalCollected: 0,
+        config: {
+          ...INITIAL_STATE.config,
+          adminPassword: priorAdminPass,
+          scriptUrl: priorScriptUrl,
+          appAuthorized: false,
+          authorizedAt: null,
+          authorizedBy: null,
+        },
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(freshZeroState));
+      return freshZeroState;
     }
+
     const parsed = JSON.parse(raw);
     const existingUrl = parsed.config?.scriptUrl;
     const resolvedUrl = !existingUrl || existingUrl.trim() === '' || existingUrl.includes('PEGA_AQUI')
@@ -115,11 +120,18 @@ export function loadLocalState(): AppState {
     return {
       ...INITIAL_STATE,
       ...parsed,
-      stations: parsed.stations || INITIAL_STATIONS,
+      stations: (parsed.stations || INITIAL_STATIONS).map((s: BarberStation, idx: number) => ({
+        ...(INITIAL_STATIONS[idx] || s),
+        ...s,
+        currentBalance: typeof s.currentBalance === 'number' ? s.currentBalance : 0,
+      })),
       config: {
         ...INITIAL_STATE.config,
         ...(parsed.config || {}),
         scriptUrl: resolvedUrl,
+        appAuthorized: Boolean(parsed.config?.appAuthorized),
+        authorizedAt: parsed.config?.authorizedAt || null,
+        authorizedBy: parsed.config?.authorizedBy || null,
       },
     };
   } catch (e) {

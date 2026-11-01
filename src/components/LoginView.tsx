@@ -80,7 +80,22 @@ export const LoginView: React.FC<Props> = ({ appState, onLogin }) => {
       <div className="w-full max-w-md mx-auto my-auto z-10">
         <div className="rounded-3xl bg-[#18181B] border border-[#27272A] p-6 sm:p-8 shadow-2xl relative gold-card-glow">
           {/* Logo with Imperial Crown, Crossed Shears & Mustache */}
-          <Logo size="lg" showText={true} className="mb-6" />
+          <Logo size="lg" showText={true} className="mb-4" />
+
+          {/* Authorization Status Badge */}
+          <div className="mb-5 flex justify-center">
+            {appState.config.appAuthorized ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/70 border border-emerald-600/40 text-emerald-400 text-[11px] font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Sistema Oficial Activo</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/70 border border-amber-600/40 text-amber-300 text-[11px] font-semibold text-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <span>En espera de autorización (Valores en $0)</span>
+              </span>
+            )}
+          </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">

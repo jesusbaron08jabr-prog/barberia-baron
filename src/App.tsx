@@ -34,6 +34,10 @@ export default function App() {
     if (appState.config.scriptUrl) {
       fetchStateFromGoogleSheets(appState.config.scriptUrl).then((cloudState) => {
         if (cloudState && cloudState.stations && cloudState.stations.length === 4) {
+          // Si el sistema aún no ha sido autorizado oficialmente, no sobreescribir los valores en cero con pruebas antiguas
+          if (!appState.config.appAuthorized && !cloudState.config?.appAuthorized) {
+            return;
+          }
           setAppState((prev) => {
             const merged = { ...prev, ...cloudState };
             saveLocalState(merged);

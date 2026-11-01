@@ -41,7 +41,9 @@ import {
   XCircle,
   Clock,
   Filter,
-  ShieldCheck
+  ShieldCheck,
+  ShieldAlert,
+  Play
 } from 'lucide-react';
 
 interface Props {
@@ -67,6 +69,8 @@ export const AdminDashboard: React.FC<Props> = ({
   const [resetTotalCollected, setResetTotalCollected] = useState(true);
   const [resetPendingBalances, setResetPendingBalances] = useState(true);
   const [showResetBalancesModal, setShowResetBalancesModal] = useState(false);
+  const [showAuthorizeModal, setShowAuthorizeModal] = useState(false);
+  const [showDeauthorizeModal, setShowDeauthorizeModal] = useState(false);
   const [adjustingStation, setAdjustingStation] = useState<BarberStation | null>(null);
   const [adjustAmount, setAdjustAmount] = useState('');
   const [adjustType, setAdjustType] = useState<'add' | 'subtract'>('add');
@@ -83,6 +87,14 @@ export const AdminDashboard: React.FC<Props> = ({
       // 1. Close any open modal first
       if (selectedPayment) {
         setSelectedPayment(null);
+        return;
+      }
+      if (showAuthorizeModal) {
+        setShowAuthorizeModal(false);
+        return;
+      }
+      if (showDeauthorizeModal) {
+        setShowDeauthorizeModal(false);
         return;
       }
       if (showResetBalancesModal) {
@@ -126,6 +138,8 @@ export const AdminDashboard: React.FC<Props> = ({
   }, [
     activeTab,
     selectedPayment,
+    showAuthorizeModal,
+    showDeauthorizeModal,
     showResetBalancesModal,
     showResetConfirmModal,
     showChargeConfirmModal,
@@ -155,8 +169,63 @@ export const AdminDashboard: React.FC<Props> = ({
   // Calculate totals
   const totalPendingBalances = appState.stations.reduce((acc, s) => acc + s.currentBalance, 0);
 
+  // 0. Autorizar y Comenzar Operación Oficial de la App
+  const handleAuthorizeApp = () => {
+    const bogotaDateStr = new Date().toLocaleString('es-CO', {
+      timeZone: 'America/Bogota',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+
+    const newState: AppState = {
+      ...appState,
+      config: {
+        ...appState.config,
+        appAuthorized: true,
+        authorizedAt: bogotaDateStr,
+        authorizedBy: 'admin',
+      },
+    };
+
+    onUpdateState(newState, {
+      notes: `Operación autorizada oficialmente por el Administrador el ${bogotaDateStr}. Conteo iniciado en $0 COP.`,
+    });
+
+    setShowAuthorizeModal(false);
+  };
+
+  // Pausar y Reiniciar todos los contadores a cero
+  const handleDeauthorizeAndReset = () => {
+    const updatedStations = appState.stations.map((s) => ({ ...s, currentBalance: 0 }));
+    const newState: AppState = {
+      ...appState,
+      stations: updatedStations,
+      payments: [],
+      chargeLogs: [],
+      totalCollected: 0,
+      config: {
+        ...appState.config,
+        appAuthorized: false,
+        authorizedAt: null,
+        authorizedBy: null,
+      },
+    };
+
+    onUpdateState(newState, {
+      notes: 'Operación pausada y todos los contadores reiniciados a $0 COP por el Administrador',
+    });
+
+    setShowDeauthorizeModal(false);
+  };
+
   // 1. Cargar Día de Alquiler a los 4 Barberos
   const handleChargeDailyRent = () => {
+    if (!appState.config.appAuthorized) {
+      setShowChargeConfirmModal(false);
+      setShowAuthorizeModal(true);
+      return;
+    }
+
     const updatedStations = appState.stations.map((s) => ({
       ...s,
       currentBalance: s.currentBalance + s.dailyRate,
@@ -658,6 +727,73 @@ export const AdminDashboard: React.FC<Props> = ({
         {/* ============================================================== */}
         {activeTab === 'puestos' && (
           <>
+            {/* Master Authorization Banner */}
+            {!appState.config.appAuthorized ? (
+              <div className="rounded-3xl bg-gradient-to-r from-amber-950/85 via-[#231E12] to-[#18181B] border-2 border-[#D4AF37] p-5 sm:p-6 shadow-2xl relative overflow-hidden space-y-4 gold-card-glow">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-[#D4AF37]/20 border border-[#D4AF37] flex items-center justify-center text-[#D4AF37] flex-shrink-0 mt-0.5">
+                      <ShieldAlert className="w-6 h-6 animate-pulse text-[#D4AF37]" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] uppercase font-black px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                          Esperando Autorización del Dueño
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-600/40">
+                          Todos los valores en $0 COP
+                        </span>
+                      </div>
+                      <h3 className="font-cinzel text-lg sm:text-xl font-black text-white mt-1.5">
+                        Autorizar Inicio de Operación de la App
+                      </h3>
+                      <p className="text-xs text-zinc-300 max-w-xl mt-1 leading-relaxed">
+                        Todos los contadores de los 4 barberos y recaudos están en cero ($0 COP). El alquiler y los reportes de pago comenzarán a correr oficialmente a partir del momento en que pulses autorizar.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthorizeModal(true)}
+                    className="w-full sm:w-auto px-6 py-3.5 rounded-2xl gold-button-gradient text-xs sm:text-sm font-black uppercase tracking-wider transition whitespace-nowrap shadow-xl flex items-center justify-center gap-2 hover:scale-[1.02] flex-shrink-0 cursor-pointer"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Autorizar y Comenzar App</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl bg-gradient-to-r from-emerald-950/60 via-[#18181B] to-[#18181B] border border-emerald-600/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-900/60 border border-emerald-500/50 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <strong className="text-xs sm:text-sm font-bold text-white font-cinzel">
+                        Operación Autorizada y en Curso
+                      </strong>
+                    </div>
+                    <p className="text-[11px] text-zinc-400">
+                      Conteo oficial iniciado el: <span className="text-zinc-200 font-semibold">{appState.config.authorizedAt || 'Hoy'}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowDeauthorizeModal(true)}
+                  className="self-end sm:self-auto px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-red-950/50 border border-zinc-700/80 hover:border-red-600/50 text-[11px] text-zinc-400 hover:text-red-300 font-bold transition flex items-center gap-1.5 cursor-pointer"
+                  title="Reiniciar todos los valores a cero y pausar la autorización"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reiniciar a Cero y Pausar</span>
+                </button>
+              </div>
+            )}
+
             {/* KPI Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
               {/* Total Recaudado */}
@@ -1886,6 +2022,114 @@ export const AdminDashboard: React.FC<Props> = ({
               >
                 <RotateCcw className="w-4 h-4" />
                 <span>Reiniciar a $0</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Autorizar Inicio Oficial de Operaciones */}
+      {showAuthorizeModal && (
+        <div
+          onClick={() => setShowAuthorizeModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-[#18181B] border-2 border-[#D4AF37] p-6 shadow-2xl space-y-4 cursor-default gold-card-glow"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#D4AF37]/20 border border-[#D4AF37] flex items-center justify-center text-[#D4AF37] flex-shrink-0">
+                <Play className="w-6 h-6 fill-current" />
+              </div>
+              <div>
+                <h3 className="font-cinzel text-lg font-bold text-white">
+                  ¿Autorizar Inicio de Operación?
+                </h3>
+                <p className="text-xs text-zinc-400">Todos los contadores arrancarán oficialmente desde cero.</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#09090B] border border-zinc-800 space-y-2.5">
+              <div className="flex items-center justify-between text-xs pb-2 border-b border-zinc-800">
+                <span className="text-zinc-400">Estado de partida:</span>
+                <span className="font-bold text-emerald-400">Limpios en $0 COP</span>
+              </div>
+              <ul className="text-xs text-zinc-300 space-y-1.5 list-disc list-inside">
+                <li>Carlos Mendoza (Puesto #1): <strong className="text-white">$0 COP</strong></li>
+                <li>Andrés Silva (Puesto #2): <strong className="text-white">$0 COP</strong></li>
+                <li>Mateo Gómez (Puesto #3): <strong className="text-white">$0 COP</strong></li>
+                <li>David Herrera (Puesto #4): <strong className="text-white">$0 COP</strong></li>
+              </ul>
+              <p className="text-[11px] text-zinc-400 pt-2 border-t border-zinc-800 leading-relaxed">
+                Al confirmar, se registrará la fecha y hora oficial de autorización. Quedarán habilitados los cobros diarios y los barberos podrán reportar sus pagos cuando corresponda.
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAuthorizeModal(false)}
+                className="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Cancelar</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleAuthorizeApp}
+                className="flex-1 py-3 rounded-xl gold-button-gradient text-xs font-black uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5 hover:scale-[1.02]"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>Confirmar y Comenzar</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Pausar y Reiniciar a Cero */}
+      {showDeauthorizeModal && (
+        <div
+          onClick={() => setShowDeauthorizeModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl bg-[#18181B] border border-red-600/50 p-6 shadow-2xl space-y-4 cursor-default"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-red-950/60 border border-red-600/50 flex items-center justify-center text-red-400 flex-shrink-0">
+                <RotateCcw className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-cinzel text-lg font-bold text-white">
+                  ¿Reiniciar Todo a Cero y Pausar?
+                </h3>
+                <p className="text-xs text-zinc-400">Se vaciarán todos los saldos y se pausará la app.</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#09090B] border border-zinc-800 text-xs text-zinc-300 leading-relaxed">
+              Esta acción pondrá en <strong>$0 COP</strong> la deuda de los 4 barberos, reiniciará el total recaudado a <strong>$0 COP</strong>, vaciará el historial y colocará la app nuevamente en espera de autorización oficial.
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeauthorizeModal(false)}
+                className="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Cancelar</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDeauthorizeAndReset}
+                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white text-xs font-black uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Reiniciar Todo a $0</span>
               </button>
             </div>
           </div>

@@ -142,6 +142,11 @@ export const BarberDashboard: React.FC<Props> = ({
     setFormError('');
     setSuccessMessage('');
 
+    if (!appState.config.appAuthorized) {
+      setFormError('El Administrador aún no ha iniciado el cobro oficial de la app. Tu saldo actual es $0 COP y estás al día.');
+      return;
+    }
+
     const parsedAmount = parseCOPInput(amountInput);
     if (!parsedAmount || parsedAmount <= 0) {
       setFormError('Por favor ingresa un monto válido en pesos colombianos (COP).');
@@ -272,6 +277,35 @@ export const BarberDashboard: React.FC<Props> = ({
 
       {/* Main Container */}
       <main className="max-w-2xl mx-auto w-full px-4 pt-5 space-y-6 flex-1">
+        {/* Banner de Estado de Autorización */}
+        {!appState.config.appAuthorized ? (
+          <div className="rounded-3xl bg-gradient-to-r from-amber-950/80 via-[#1E1B13] to-[#18181B] border-2 border-amber-600/60 p-5 shadow-2xl space-y-3">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-amber-900/40 border border-amber-500/50 flex items-center justify-center text-amber-400 flex-shrink-0 mt-0.5">
+                <Clock className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  En Espera de Autorización
+                </span>
+                <h3 className="font-cinzel text-base font-bold text-white mt-1">
+                  El Administrador aún no ha iniciado el cobro
+                </h3>
+                <p className="text-xs text-zinc-300 mt-1 leading-relaxed">
+                  Tu saldo de alquiler actual es de <strong className="text-emerald-400">$0 COP</strong> y estás al día. El conteo diario y el formulario de pagos comenzarán a correr en cuanto el Administrador autorice el inicio oficial de la app.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl bg-emerald-950/40 border border-emerald-600/40 px-4 py-2.5 flex items-center gap-2.5 text-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-emerald-300 font-semibold">Sistema Activo y Autorizado</span>
+            <span className="text-zinc-500">•</span>
+            <span className="text-zinc-400">Desde: {appState.config.authorizedAt || 'Hoy'}</span>
+          </div>
+        )}
+
         {/* Hero Card: Saldo Pendiente Actual */}
         <div className="rounded-3xl bg-gradient-to-br from-[#1E1E24] via-[#18181B] to-[#0E0E10] border border-[#D4AF37]/40 p-6 shadow-2xl relative overflow-hidden gold-card-glow">
           <div className="absolute top-0 right-0 w-44 h-44 bg-[#D4AF37]/10 rounded-full blur-2xl pointer-events-none" />
@@ -605,23 +639,39 @@ export const BarberDashboard: React.FC<Props> = ({
             )}
 
             {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-4 rounded-2xl gold-button-gradient font-extrabold text-sm tracking-wider uppercase transition shadow-xl flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                  <span>Registrando y Sincronizando...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  <span>Reportar Pago de Alquiler</span>
-                </>
-              )}
-            </button>
+            {!appState.config.appAuthorized ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={true}
+                  className="w-full py-4 rounded-2xl bg-zinc-800 border border-zinc-700/80 text-zinc-400 font-extrabold text-xs sm:text-sm tracking-wider uppercase cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Clock className="w-4 h-4 text-amber-400" />
+                  <span>En Espera de Autorización del Administrador</span>
+                </button>
+                <p className="text-[11px] text-zinc-500 text-center">
+                  Tu saldo es $0 COP. Podrás enviar pagos cuando el Administrador inicie el ciclo de alquiler.
+                </p>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-4 rounded-2xl gold-button-gradient font-extrabold text-sm tracking-wider uppercase transition shadow-xl flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                    <span>Registrando y Sincronizando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    <span>Reportar Pago de Alquiler</span>
+                  </>
+                )}
+              </button>
+            )}
           </form>
         </div>
 

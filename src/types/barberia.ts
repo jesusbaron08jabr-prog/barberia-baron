@@ -61,6 +61,9 @@ export interface AdminConfig {
   scriptUrl: string; // Google Apps Script Web App URL
   lastSyncedAt: string | null;
   autoSync: boolean;
+  appAuthorized: boolean; // Si el administrador ha autorizado el inicio oficial de la app
+  authorizedAt: string | null; // Fecha y hora en que se autorizó el uso de la app
+  authorizedBy: string | null;
 }
 
 export interface AppState {
